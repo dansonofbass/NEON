@@ -56,7 +56,7 @@ Standard quality caps pixel ratio at 1.25 and begins with a target of 12 robots,
 ## Deploy to Vercel
 
 1. Push the repository, including `package-lock.json`, to your Git provider.
-2. Import it as a new Vercel project using the **Next.js** preset.
+2. Import it as a new Vercel project using the **Other** preset. The committed `vercel.json` sets `framework: null` for static hosting.
 3. Use Node.js 24, install command `npm ci`, build command `npm run build`, and output directory `out`.
 4. Deploy. No environment variables or secrets are required.
 
