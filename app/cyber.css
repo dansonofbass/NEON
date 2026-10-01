@@ -1,0 +1,134 @@
+/* Neon interface: electric cyan, hot magenta, and ultraviolet. */
+:root { --cyan: #40f5ff; --pink: #ff3ca6; --violet: #8d55ff; }
+html, body { background: #09051c; overscroll-behavior: none; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline-color: var(--cyan); }
+.app { background: #09091c; }
+.brand-icon { border-color: var(--cyan); color: var(--cyan); box-shadow: 3px 3px 0 #ff3ca652, 0 0 18px #40f5ff22; }
+.topbar { border-bottom-color: #a45bff2a; background: linear-gradient(90deg, #0e082699, #10112633); }
+.system-status i, footer i { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+.intro-kicker { color: var(--cyan); }
+.intro-kicker span { background: var(--pink); box-shadow: 0 0 12px var(--pink); }
+h1 { color: #ebfbff; text-shadow: 3px 1px 0 #40f5ff77, -2px -1px 0 #ff3ca650; }
+h1 em { color: var(--cyan); text-shadow: 4px 2px 0 #ff3ca6b3, 0 0 35px #40f5ff25; }
+.title-dot { color: var(--pink); }
+.tagline { color: #e5d8fa; }
+.description { color: #a098bc; }
+.primary { background: linear-gradient(105deg, #40f5ff, #7cbaff); color: #080d27; box-shadow: 0 0 28px #40f5ff20; border-left: 3px solid #e6ffff; }
+.primary:hover { background: linear-gradient(105deg, #a1fbff, #be8dff); }
+.primary > span:last-child { color: #251045; }
+.play-note { color: #a084b8; }
+.settings { flex-wrap: wrap; gap: 15px; padding: 12px 0; border-top: 1px solid #8d55ff33; border-bottom: 1px solid #8d55ff33; width: max-content; max-width: 100%; }
+.settings label, .settings button { color: #a194bc; }
+.settings select { background: #170d2f; color: #d4faff; border-color: #624085; border-radius: 2px; }
+.settings button span { color: var(--cyan); }
+.settings button[aria-pressed="false"] span { color: #a088ad; }
+.restart { background: #ff3ca60b; color: #ffa6d5; border-color: #ff3ca655; }
+.restart:hover { background: #ff3ca625; }
+.controls { border-top-color: #a45bff3b; }
+.controls > div > span { color: #a59ab7; }
+kbd { background: #130e2c; border-color: #5d3e79; color: #c9faff; }
+footer { background: #0b071bcc; border-top-color: #8d55ff33; color: #9382ac; }
+footer b { color: var(--cyan); }
+.city-art { background: radial-gradient(ellipse at 80% 42%, #ff238733, transparent 40%), radial-gradient(ellipse at 66% 75%, #23ddff33, transparent 42%), linear-gradient(100deg, #0a081d 25%, #1e0b37); }
+.city-art:after { background: linear-gradient(90deg, #0a081d 25%, #0a081dd9 42%, transparent 85%), linear-gradient(0deg, #09091c 5%, transparent 45%, #0b071c66); }
+.moon { background: repeating-linear-gradient(0deg, #ff3ca640 0 8px, #ff3ca60a 8px 12px); border-color: #ff67c055; box-shadow: 0 0 90px #ff3ca61c; }
+.tower { background: linear-gradient(90deg, #0b1027, #24204a); border-top-color: #8c4eaa; }
+.tower span { background: var(--cyan); }
+.tower:nth-child(odd) span { background: var(--pink); box-shadow: 0 0 15px #ff3ca688; }
+.tower b { background: var(--pink); box-shadow: 0 0 14px #ff3ca6aa; }
+.scene-label strong { color: var(--pink); text-shadow: 0 0 18px #ff3ca655; }
+.scene-label .eyebrow { color: var(--cyan); }
+.overlay { background: linear-gradient(110deg, #0b061de8, #170a2ca6); }
+.plus { color: var(--cyan); }
+.health-track i { background: var(--cyan); box-shadow: 0 0 10px #40f5ff55; }
+.combat-stats p i.charged { background: var(--pink); border-color: #ffa8dc; }
+.crosshair.hit { filter: none; }
+.crosshair.hit:before, .crosshair.hit:after, .crosshair.hit i, .crosshair.hit b { background: var(--pink); }
+.adaptive { color: #80eefa; }
+
+/* Touch controls update DOM transforms directly, outside React's render loop. */
+.touch-controls { display: none; position: absolute; inset: 0; z-index: 7; pointer-events: none; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/* Match the input detection in Game.tsx; narrow desktop windows stay desktop. */
+@media (hover: none) and (pointer: coarse) {
+  .touch-mode .touch-controls { display: block; }
+}
+.touch-controls [data-control], .touch-pause { pointer-events: auto; touch-action: none; }
+.touch-look { position: absolute; inset: 0 0 0 36%; }
+.touch-look > span { position: absolute; bottom: 12px; left: 25%; color: #b6ebff66; font-size: 7px; letter-spacing: 2px; pointer-events: none; }
+.touch-stick { position: absolute; width: 138px; height: 138px; left: max(24px, env(safe-area-inset-left)); bottom: max(24px, env(safe-area-inset-bottom)); border: 1px solid #63ebff66; border-radius: 50%; background: radial-gradient(circle, #40f5ff12 0 45%, #40f5ff04 46%); box-shadow: inset 0 0 22px #40f5ff09, 0 0 0 6px #40f5ff05; }
+.stick-ring { position: absolute; inset: 15%; border: 1px dashed #40f5ff4a; border-radius: 50%; pointer-events: none; }
+.stick-thumb { position: absolute; left: calc(50% - 25px); top: calc(50% - 25px); width: 50px; height: 50px; border: 1px solid #94f8ffb3; border-radius: 50%; background: #1a466c99; box-shadow: 0 0 15px #40f5ff1a; pointer-events: none; will-change: transform; }
+.stick-thumb i { position: absolute; inset: 16px; border: 1px solid #9efbff; transform: rotate(45deg); }
+.stick-label, .stick-sprint { position: absolute; left: 0; width: 100%; text-align: center; font-size: 7px; letter-spacing: 2px; color: #b5dffa9c; pointer-events: none; }
+.stick-label { bottom: -16px; }.stick-sprint { top: -18px; color: #78ecff9c; }
+.touch-stick.pressed { border-color: #40f5ffbb; background: #40f5ff10; }
+.touch-button { position: absolute; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 3px; border-radius: 50%; border: 1px solid #99dcff77; background: #13284180; color: #d3faff; padding: 0; box-shadow: inset 0 0 18px #52d7ff0c; }
+.touch-button svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.touch-button span { font-size: 7px; letter-spacing: 1px; }
+.touch-fire { width: 94px; height: 94px; right: max(27px, env(safe-area-inset-right)); bottom: max(32px, env(safe-area-inset-bottom)); color: #ffd5ef; border: 2px solid #ff79c58c; background: #57244566; box-shadow: 0 0 0 5px #ff3ca60a; }
+.touch-fire svg { width: 40px; height: 40px; }
+.touch-jump { width: 60px; height: 60px; right: max(43px, env(safe-area-inset-right)); bottom: calc(max(32px, env(safe-area-inset-bottom)) + 115px); }
+.touch-grenade { width: 62px; height: 62px; right: calc(max(27px, env(safe-area-inset-right)) + 117px); bottom: calc(max(32px, env(safe-area-inset-bottom)) + 12px); }
+.touch-button.pressed { color: #fff; border-color: var(--cyan); background: #308ba077; box-shadow: 0 0 22px #40f5ff33; }
+.touch-fire.pressed { border-color: #ffbce5; background: #dc327a77; box-shadow: 0 0 25px #ff3ca644; }
+.touch-pause { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); width: 44px; height: 38px; border: 1px solid #8d9cff77; background: #10142a99; color: #bdf7ff; border-radius: 6px; font-size: 20px; }
+.rotate-hint { display: none; position: absolute; top: 145px; left: 0; right: 0; text-align: center; color: #9dc7d9aa; font-size: 8px; letter-spacing: 1px; }
+
+/* The menu scrolls on small screens. Gameplay always fits the visible viewport. */
+.touch-mode { min-height: 0; height: 100dvh; }
+.touch-mode .topbar { height: calc(58px + env(safe-area-inset-top)); padding-left: max(22px, env(safe-area-inset-left)); padding-right: max(22px, env(safe-area-inset-right)); padding-top: env(safe-area-inset-top); }
+.touch-mode .edition, .touch-mode .version, .touch-mode .scene-label { display: none; }
+.touch-mode .menu { top: calc(58px + env(safe-area-inset-top)); bottom: calc(42px + env(safe-area-inset-bottom)); padding: 28px max(24px, env(safe-area-inset-left)) 24px; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }
+.touch-mode .menu-content { width: 100%; max-width: 540px; }
+.touch-mode .settings { gap: 12px; row-gap: 14px; }
+.touch-mode .settings select { min-height: 36px; font-size: 12px; }
+.touch-mode .settings button { min-height: 36px; font-size: 9px; }
+.touch-mode .controls { position: static; margin-top: 26px; padding-top: 18px; width: 100%; flex-shrink: 0; }
+.touch-mode .controls > div { gap: 14px; }
+.touch-mode footer { height: calc(42px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); font-size: 7px; }
+.touch-mode .overlay { backdrop-filter: none; }
+.touch-mode.in-game:not(.menu-open) { touch-action: none; }
+.touch-mode.in-game .topbar { height: calc(48px + env(safe-area-inset-top)); }
+.touch-mode.in-game .system-status { display: none; }
+.touch-mode.in-game .wordmark { font-size: 9px; letter-spacing: 1px; gap: 10px; }
+.touch-mode.in-game .brand-icon { width: 21px; height: 23px; font-size: 17px; }
+.touch-mode .health { top: calc(52px + env(safe-area-inset-top)); bottom: auto; left: max(22px, env(safe-area-inset-left)); width: 115px; }
+.touch-mode .health strong { font-size: 24px; }.touch-mode .health small { font-size: 10px; }
+.touch-mode .health .plus { font-size: 19px; }.touch-mode .health > div { margin-top: 1px; gap: 7px; }
+.touch-mode .health .health-track { margin-top: 5px; }
+.touch-mode .combat-stats { top: calc(58px + env(safe-area-inset-top)); bottom: auto; right: max(22px, env(safe-area-inset-right)); gap: 20px; }
+.touch-mode .combat-stats strong { font-size: 24px; margin-top: 2px; }
+.touch-mode .combat-stats .eyebrow, .touch-mode .health .eyebrow { font-size: 7px; letter-spacing: 1px; }
+.touch-mode .combat-stats p { margin: 5px 0; }.touch-mode .combat-stats p i { width: 12px; height: 14px; }
+.touch-mode .district { top: calc(113px + env(safe-area-inset-top)); left: max(22px, env(safe-area-inset-left)); }
+.touch-mode .district .eyebrow { font-size: 7px; }.touch-mode .district small { display: none; }
+.touch-mode .weapon-info { display: none; }
+.touch-mode .adaptive { top: auto; bottom: 5px; font-size: 6px; left: 0; right: 0; text-align: center; }
+.touch-mode.menu-open .hud { visibility: hidden; }
+@media (orientation: portrait) {
+  .touch-mode h1 { font-size: clamp(70px, 23vw, 106px); }
+  .touch-mode .overlay h1 { font-size: clamp(48px, 14vw, 74px); letter-spacing: -3px; }
+  .touch-mode .rotate-hint { display: block; }
+  .touch-mode .touch-stick { width: 124px; height: 124px; left: max(18px, env(safe-area-inset-left)); bottom: max(44px, env(safe-area-inset-bottom)); }
+  .touch-mode .touch-fire { right: max(18px, env(safe-area-inset-right)); bottom: max(48px, env(safe-area-inset-bottom)); width: 84px; height: 84px; }
+  .touch-mode .touch-jump { right: max(29px, env(safe-area-inset-right)); bottom: calc(max(48px, env(safe-area-inset-bottom)) + 105px); }
+  .touch-mode .touch-grenade { right: calc(max(18px, env(safe-area-inset-right)) + 101px); bottom: calc(max(48px, env(safe-area-inset-bottom)) + 105px); }
+}
+@media (orientation: landscape) and (max-height: 600px) {
+  .touch-mode .menu { padding-top: 16px; }
+  .touch-mode .menu-content { max-width: none; display: grid; grid-template-columns: 1fr 1fr; column-gap: 30px; align-items: start; }
+  .touch-mode .intro-kicker { grid-column: 1 / -1; margin-bottom: 14px; font-size: 8px; }
+  .touch-mode h1, .touch-mode .overlay h1 { grid-column: 1; grid-row: 2 / 5; font-size: clamp(46px, 8.5vw, 70px); letter-spacing: -3px; }
+  .touch-mode .actions { grid-column: 2; grid-row: 2 / 4; margin: 0; width: 100%; max-width: 370px; }
+  .touch-mode .primary { height: 48px; }
+  .touch-mode .play-note { font-size: 6px; margin-top: 9px; }
+  .touch-mode .settings { grid-column: 2; grid-row: 4 / 7; margin-top: 12px; gap: 10px; padding: 4px 0; }
+  .touch-mode .tagline { grid-column: 1; grid-row: 5; font-size: 14px; margin: 10px 0 6px; }
+  .touch-mode .description { grid-column: 1; grid-row: 6; font-size: 10px; min-height: 0; }
+  .touch-mode .controls { margin-top: 18px; padding-top: 12px; display: flex; gap: 16px; }
+  .touch-mode .controls > div { margin: 0; gap: 12px; }
+  .touch-mode .controls > div > span { width: auto; font-size: 8px; }
+  .touch-mode .controls kbd { font-size: 7px; padding: 4px; }
+  .touch-mode .touch-stick { width: 124px; height: 124px; }
+}
+@media (prefers-reduced-motion: reduce) { .primary { transition: none; } }

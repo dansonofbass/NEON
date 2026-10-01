@@ -1,0 +1,10 @@
+{
+  "name": "neon-drift",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {"dev": "next dev", "build": "next build", "start": "node scripts/serve.mjs", "typecheck": "tsc --noEmit", "test": "node --experimental-strip-types --test tests/world.test.ts tests/engine.test.mjs tests/touch.test.mjs", "size": "node scripts/build-size.mjs"},
+  "dependencies": {"next": "^15.5.12", "react": "^19.1.0", "react-dom": "^19.1.0", "three": "^0.180.0"},
+  "devDependencies": {"@types/node": "^22.0.0", "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0", "@types/three": "^0.180.0", "typescript": "^5.9.0"},
+  "overrides": { "postcss": "^8.5.28" }
+}
