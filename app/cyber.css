@@ -132,3 +132,39 @@ footer b { color: var(--cyan); }
   .touch-mode .touch-stick { width: 124px; height: 124px; }
 }
 @media (prefers-reduced-motion: reduce) { .primary { transition: none; } }
+
+/* A single composited wash falls from the top when a run ends. */
+.death-wash { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: radial-gradient(ellipse at 50% 0, #ff233fa6, #8a092c55 48%, transparent 82%), linear-gradient(#380813aa, #09091c99); animation: death-wash-in .75s ease-out both; }
+.game-over { min-height: 0; }
+.game-over .menu { z-index: 3; justify-content: center; align-items: center; overflow-y: auto; background: transparent; backdrop-filter: none; }
+.game-over .menu-content { width: min(100%, 480px); text-align: center; display: block; padding: 20px 0; }
+.game-over .intro-kicker { justify-content: center; color: #ffacb8; }
+.game-over h1 { margin: 0 auto; font-size: clamp(64px, 12vh, 112px); letter-spacing: -4px; }
+.game-over h1 em { color: #ff5e76; text-shadow: 0 0 32px #ff233f66; }
+.game-over .tagline { font-size: 16px; }
+.game-over .description, .game-over .settings, .game-over .controls, .game-over .play-note { display: none; }
+.game-over .actions { margin: 24px auto 0; width: 100%; }
+.game-over .primary { background: #ff647b; border-left-color: #ffe2e7; }
+.game-over .primary:hover { background: #ff92a2; }
+.game-over .restart { min-height: 44px; border-color: #ff899c80; color: #ffe2e7; }
+@keyframes death-wash-in { from { opacity: 0; transform: translateY(-65%); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .death-wash { animation: none; } }
+@media (max-height: 500px) { .game-over .menu { align-items: flex-start; padding-top: 8px; } .game-over h1 { font-size: 52px; } .game-over .intro-kicker { margin-bottom: 12px; } .game-over .tagline { margin: 12px 0; } .game-over .actions { margin-top: 12px; } }
+/* Eight-second in-engine prologue; typography stays crisp above the live city. */
+.intro-scene .topbar, .intro-scene .grain { display: none; }
+.cinematic { position: absolute; inset: 0; z-index: 6; pointer-events: none; color: #f0fbff; background: linear-gradient(90deg, #080c2438, transparent 65%), radial-gradient(ellipse, transparent 40%, #050b1c99); }
+.cinematic-frame { position: absolute; inset: 0; border-top: clamp(32px, 9vh, 92px) solid #040912; border-bottom: clamp(32px, 9vh, 92px) solid #040912; }
+.cinematic-meta { position: absolute; top: 4vh; left: 6%; right: 6%; display: flex; justify-content: space-between; gap: 18px; color: #a0becd; font: 9px/1.4 Arial, sans-serif; letter-spacing: 3px; }
+.cinematic-copy { position: absolute; left: 8%; right: 6%; top: 50%; transform: translateY(-40%); animation: cinematic-copy-in .65s ease-out both; text-shadow: 0 2px 22px #02071f, 0 1px 3px #000; }
+.cinematic-kicker { font-size: 10px; letter-spacing: 4px; color: #99f4fa; }
+.cinematic-copy h2 { font-size: clamp(28px, 5.5vw, 78px); line-height: 1.06; font-weight: 900; letter-spacing: -.04em; margin: 18px 0 24px; }
+.cinematic-copy h2 span { color: #82edf7; }
+.cinematic-copy > i { display: block; width: 66px; height: 2px; background: #ff5fae; box-shadow: 0 0 14px #ff5fae88; }
+.cinematic-bottom { position: absolute; bottom: 3.7vh; left: 6%; right: 6%; display: flex; align-items: center; gap: 24px; color: #809ba9; font-size: 8px; letter-spacing: 2px; font-variant-numeric: tabular-nums; }
+.cinematic-bottom > span:last-child { width: 48px; text-align: right; color: #abf7ff; }
+.cinematic-progress { flex: 1; height: 1px; background: #26394b; }
+.cinematic-progress i { display: block; height: 1px; background: #91e7ef; transform-origin: left; transition: transform .1s linear; }
+.cinematic-pause { position: absolute; right: 6%; top: calc(9vh + 16px); padding: 10px; border: 1px solid #b1dfed44; background: #050e2477; color: #c4e4ee; font-size: 9px; letter-spacing: 2px; pointer-events: auto; }
+@keyframes cinematic-copy-in { from { opacity: 0; transform: translateY(calc(-40% + 12px)); } to { opacity: 1; transform: translateY(-40%); } }
+@media (max-width: 600px) { .cinematic-meta { font-size: 7px; letter-spacing: 1px; } .cinematic-kicker { font-size: 8px; letter-spacing: 2px; } .cinematic-bottom { gap: 10px; font-size: 6px; letter-spacing: 1px; } .cinematic-copy { left: 7%; } }
+@media (prefers-reduced-motion: reduce) { .cinematic-copy { animation: none; } .cinematic-progress i { transition: none; } }

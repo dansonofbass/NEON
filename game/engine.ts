@@ -3,16 +3,17 @@ import { CHUNK, layoutFor, overlaps, type Box } from './world';
 import type { Callbacks, Settings } from './types';
 
 type Chunk = { cx: number; cz: number; group: THREE.Group; boxes: Box[]; name: string };
-type Enemy = { mesh: THREE.Group; eye: THREE.Mesh; x: number; z: number; health: boolean; state: 'idle' | 'detect' | 'chase' | 'attack' | 'dead'; timer: number; check: number; sees: boolean; angle: number };
+type Enemy = { mesh: THREE.Group; eye: THREE.Mesh; x: number; z: number; health: number; boss: boolean; state: 'idle' | 'detect' | 'chase' | 'attack' | 'dead'; timer: number; check: number; sees: boolean; angle: number };
 type Effect = { mesh: THREE.Mesh; life: number; max: number; size: number; explosion: boolean };
 type Grenade = { mesh: THREE.Mesh; velocity: THREE.Vector3; fuse: number };
+const INTRO_SECONDS = 8;
 const STEP = 1 / 60, RADIUS = .38, EYE = 1.65;
 const COLORS = [0x38e8eb, 0xf454b8, 0xffbf60];
 
 export class Engine {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(78, 1, .08, 100);
+  private camera = new THREE.PerspectiveCamera(78, 1, .08, 150);
   private boxGeometry = new THREE.BoxGeometry(1, 1, 1);
   private sphereGeometry = new THREE.IcosahedronGeometry(1, 1);
   private materials: THREE.Material[] = [];
@@ -65,6 +66,18 @@ export class Engine {
   private spawnClock = 0;
   private navClock = 0;
   private elapsed = 0;
+  private introTime = 0;
+  private introStarted = false;
+  private survival = 0;
+  private nextBoss = 180;
+  private bossDue = false;
+  private bossPending = false;
+  private bossBreather = 0;
+  private bossAlert = 0;
+  private bossAlertMessage = 'BOSS INCOMING';
+  private spawnDirection = 0;
+  private clockScale = 1;
+  private readonly visibility = 78;
   private frameMs = 16.67;
   private slowTime = 0;
   private adaptive = false;
@@ -92,7 +105,7 @@ export class Engine {
     catch { this.boxGeometry.dispose(); this.sphereGeometry.dispose(); this.materials.forEach(m => m.dispose()); throw new Error('WebGL is unavailable. Enable hardware acceleration or try a recent desktop Chrome, Edge, or Firefox.'); }
     this.renderer.setClearColor(0x070e1b);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.scene.fog = new THREE.Fog(0x070e1b, 22, 52);
+    this.scene.fog = new THREE.Fog(0x070e1b, 35, this.visibility);
     this.scene.add(new THREE.HemisphereLight(0xaccafa, 0x24364c, 2.1));
     const light = new THREE.DirectionalLight(0x96bafa, 1.5); light.position.set(-10, 30, 8); this.scene.add(light);
     this.camera.rotation.order = 'YXZ';
@@ -100,7 +113,7 @@ export class Engine {
     this.buildWeapon();
     this.muzzle = new THREE.Mesh(this.boxGeometry, this.neon[2]);
     this.muzzle.scale.set(.09, .09, .18); this.muzzle.position.set(.25, -.24, -.88); this.muzzle.visible = false; this.camera.add(this.muzzle);
-    for (let i = 0; i < 16; i++) this.enemies.push(this.buildEnemy(i));
+    for (let i = 0; i < 41; i++) this.enemies.push(this.buildEnemy(i));
     for (let i = 0; i < 32; i++) {
       const mesh = new THREE.Mesh(this.sphereGeometry, this.neon[i % 3]); mesh.visible = false; this.scene.add(mesh);
       this.effects.push({ mesh, life: 0, max: 1, size: 1, explosion: false });
@@ -112,12 +125,12 @@ export class Engine {
     this.host.appendChild(this.renderer.domElement);
     this.listen(document, 'pointerlockchange', () => {
       if (this.touchMode) return;
-      if (document.pointerLockElement === this.host && !this.failed && this.health > 0) { this.running = true; this.lastTime = performance.now(); this.callbacks.status('playing'); }
+      if (document.pointerLockElement === this.host && !this.failed && this.health > 0) { this.activate(); }
       else { this.pause(); }
     });
     this.listen(document, 'pointerlockerror', () => { if (!this.running && !this.touchMode) this.callbacks.status('ready', 'Mouse capture was blocked. Click Enter again, or allow pointer lock in your browser.'); });
     this.listen(document, 'mousemove', ((event: MouseEvent) => {
-      if (!this.running || this.touchMode) return;
+      if (!this.running || this.touchMode || this.introTime < INTRO_SECONDS) return;
       this.yaw -= event.movementX * .0021;
       this.pitch = THREE.MathUtils.clamp(this.pitch - event.movementY * .0021, -1.48, 1.48);
     }) as EventListener);
@@ -125,11 +138,12 @@ export class Engine {
       if (event.code === 'F3' && process.env.NODE_ENV === 'development') { event.preventDefault(); this.diagnostics = !this.diagnostics; }
       if (!this.running) return;
       if (['Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'KeyG', 'Escape'].includes(event.code)) event.preventDefault();
+      if (event.code === 'Escape') { this.pause(); return; }
+      if (this.introTime < INTRO_SECONDS) return;
       this.keys.add(event.code);
-      if (event.code === 'Escape') this.pause();
     }) as EventListener);
     this.listen(document, 'keyup', ((event: KeyboardEvent) => { this.keys.delete(event.code); }) as EventListener);
-    this.listen(this.host, 'mousedown', ((event: MouseEvent) => { if (event.button === 0 && this.running && !this.touchMode) this.firing = true; }) as EventListener);
+    this.listen(this.host, 'mousedown', ((event: MouseEvent) => { if (event.button === 0 && this.running && !this.touchMode && this.introTime >= INTRO_SECONDS) this.firing = true; }) as EventListener);
     this.listen(document, 'mouseup', () => { if (!this.touchMode) this.firing = false; });
     this.listen(this.host, 'contextmenu', event => event.preventDefault());
     this.listen(window, 'blur', () => { this.pause(); if (document.pointerLockElement === this.host) document.exitPointerLock(); });
@@ -139,6 +153,9 @@ export class Engine {
       event.preventDefault(); this.failed = true; this.running = false; this.keys.clear(); document.exitPointerLock?.();
       this.callbacks.status('error', 'The graphics context was lost. Reload to create a fresh renderer. Low quality may help on this device.');
     });
+    if (process.env.NODE_ENV === 'development' && typeof location !== 'undefined') {
+      this.clockScale = Math.min(60, Math.max(1, Number(new URLSearchParams(location.search).get('survivalSpeed')) || 1));
+    }
     this.configure(settings);
     this.reset();
   }
@@ -173,13 +190,18 @@ export class Engine {
     this.mesh(group, this.trim, .22, .36, 0, .19, .64, .23);
     this.mesh(group, this.dark, -.43, .98, 0, .18, .51, .22);
     this.mesh(group, this.dark, .43, .98, 0, .18, .51, .22);
+    if (i === 40) {
+      this.mesh(group, this.neon[2], 0, 1.85, 0, .75, .16, .5);
+      this.mesh(group, this.neon[2], -.48, 1.25, 0, .18, .25, .5);
+      this.mesh(group, this.neon[2], .48, 1.25, 0, .18, .25, .5);
+    }
     group.visible = false; this.scene.add(group);
-    return { mesh: group, eye, x: 0, z: 0, health: false, state: 'dead', timer: 0, check: i * .045, sees: false, angle: i * 2.4 };
+    return { mesh: group, eye, x: 0, z: 0, health: 0, boss: i === 40, state: 'dead', timer: 0, check: i * .045, sees: false, angle: i * 2.4 };
   }
 
   start() {
     if (this.disposed) return;
-    if (this.touchMode || document.pointerLockElement === this.host) { this.running = true; this.callbacks.status('playing'); }
+    if (this.touchMode || document.pointerLockElement === this.host) { this.activate(); }
     else this.callbacks.status('ready');
     this.lastTime = performance.now();
     this.raf = requestAnimationFrame(this.frame);
@@ -187,10 +209,29 @@ export class Engine {
   resume() {
     if (this.disposed || this.failed || this.health <= 0) return;
     this.initAudio();
-    if (this.touchMode) { this.running = true; this.lastTime = performance.now(); this.callbacks.status('playing'); return; }
+    if (this.touchMode) { this.activate(); return; }
     try {
       void Promise.resolve(this.host.requestPointerLock()).catch(() => this.callbacks.status('ready', 'Click Enter to capture your mouse. If capture stays blocked, check browser permissions.'));
     } catch { this.callbacks.status('ready', 'This browser did not allow mouse capture. Try a current desktop browser.'); }
+  }
+  private activate() {
+    this.running = true; this.lastTime = performance.now(); this.accumulator = 0;
+    if (this.introTime >= INTRO_SECONDS) this.callbacks.status('playing');
+    else if (this.introStarted) this.callbacks.status('intro');
+    else this.callbacks.status('loading', 'Preparing the city flyover...');
+  }
+  private advanceIntro(dt: number) {
+    if (!this.running || document.hidden || this.introTime >= INTRO_SECONDS) return;
+    // Start the eight-second shot only after all nine existing chunks are ready.
+    if (!this.introStarted) {
+      if (this.queue.length || this.chunks.length < 9) return;
+      this.introStarted = true; this.callbacks.status('intro'); this.syncHud(); return;
+    }
+    this.introTime = Math.min(INTRO_SECONDS, this.introTime + dt);
+    if (this.introTime >= INTRO_SECONDS) {
+      this.keys.clear(); this.clearTouchInput(); this.accumulator = 0;
+      this.updateCamera(); this.syncHud(); this.callbacks.status('playing');
+    }
   }
   pause() {
     this.running = false; this.clearTouchInput(); this.keys.clear(); this.accumulator = 0;
@@ -205,23 +246,23 @@ export class Engine {
     this.touchRight = 0; this.touchForward = 0; this.touchSprint = false; this.touchJumpQueued = false; this.firing = false;
   }
   touchMove(right: number, forward: number, sprint: boolean) {
-    if (!this.running || !this.touchMode) return;
+    if (!this.running || !this.touchMode || this.introTime < INTRO_SECONDS) return;
     const length = Math.max(1, Math.hypot(right, forward));
     this.touchRight = right / length; this.touchForward = forward / length; this.touchSprint = sprint;
   }
   touchLook(dx: number, dy: number) {
-    if (!this.running || !this.touchMode) return;
+    if (!this.running || !this.touchMode || this.introTime < INTRO_SECONDS) return;
     const sensitivity = THREE.MathUtils.clamp(2.4 / Math.max(1, Math.min(this.host.clientWidth, this.host.clientHeight)), .002, .008);
     this.yaw -= dx * sensitivity;
     this.pitch = THREE.MathUtils.clamp(this.pitch - dy * sensitivity, -1.48, 1.48);
   }
   touchFire(held: boolean) {
-    if (!this.running || !this.touchMode) return;
+    if (!this.running || !this.touchMode || this.introTime < INTRO_SECONDS) return;
     this.firing = held;
     if (held) { this.initAudio(); if (this.shootCooldown <= 0) this.shoot(); }
   }
   touchAction(action: 'jump' | 'grenade') {
-    if (!this.running || !this.touchMode) return;
+    if (!this.running || !this.touchMode || this.introTime < INTRO_SECONDS) return;
     this.initAudio();
     if (action === 'jump') this.touchJumpQueued = true; else this.throwGrenade();
   }
@@ -229,7 +270,7 @@ export class Engine {
     this.settings = { ...settings }; this.adaptive = false; this.slowTime = 0; this.resize();
     if (!settings.sound) void this.audio?.suspend().catch(() => {});
     else if (this.audio) void this.audio.resume().catch(() => {});
-    if (settings.quality === 'low') for (let i = 8; i < this.enemies.length; i++) this.despawn(this.enemies[i]);
+    if (settings.quality === 'low') for (let i = 24; i < 40; i++) this.despawn(this.enemies[i]);
   }
   private resize() {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.settings.quality === 'low' ? .8 : this.adaptive ? .85 : 1.25));
@@ -237,10 +278,13 @@ export class Engine {
     this.camera.aspect = this.host.clientWidth / Math.max(1, this.host.clientHeight); this.camera.updateProjectionMatrix();
   }
   reset() {
+    this.introTime = 0; this.introStarted = false;
     this.clearTouchInput();
     this.running = false; this.keys.clear(); this.firing = false; this.health = 200; this.kills = 0; this.ammo = 3; this.recharge = 0;
     this.damageAgo = 10; this.hurtTime = 0; this.hitTime = 0; this.shootCooldown = 0; this.grenadeLatch = false;
     this.flash = 0; this.recoil = 0;
+    this.survival = 0; this.nextBoss = 180; this.bossDue = false; this.bossPending = false;
+    this.bossBreather = 0; this.bossAlert = 0; this.bossAlertMessage = 'BOSS INCOMING'; this.spawnDirection = 0; this.hudClock = 0;
     this.vertical = 0; this.grounded = true; this.yaw = 0; this.pitch = 0; this.elapsed = 0; this.accumulator = 0;
     this.originX = 0; this.originZ = 0; this.player.set(20, EYE, 20);
     for (const c of this.chunks) this.removeChunk(c); this.chunks.length = 0; this.queue.length = 0;
@@ -356,7 +400,9 @@ export class Engine {
     if (!document.hidden) {
       // Hard work budget: at most one small chunk (4–8 buildings) per rendered frame.
       if (this.queue.length) { const next = this.queue.shift()!; this.addChunk(next.cx, next.cz); this.navClock = 0; }
-      if (this.running) {
+      if (this.running && this.introTime < INTRO_SECONDS) {
+        this.advanceIntro(raw);
+      } else if (this.running) {
         this.frameMs += (Math.min(raw, .1) * 1000 - this.frameMs) * .025;
         this.slowTime = this.frameMs > 27 ? this.slowTime + delta : Math.max(0, this.slowTime - delta);
         if (this.slowTime > 6 && !this.adaptive && this.settings.quality === 'standard') { this.adaptive = true; this.resize(); }
@@ -370,8 +416,17 @@ export class Engine {
     }
   };
   private simulate(dt: number) {
+    if (!this.running || document.hidden || this.introTime < INTRO_SECONDS) return;
+    this.survival += dt * this.clockScale;
+    this.bossAlert = Math.max(0, this.bossAlert - dt);
+    this.bossBreather = Math.max(0, this.bossBreather - dt);
+    if (this.survival >= this.nextBoss) {
+      this.nextBoss = (Math.floor(this.survival / 180) + 1) * 180;
+      if (this.enemies[40].health || this.bossDue) this.bossPending = true;
+      else { this.bossDue = true; this.bossAlert = 4; }
+    }
     this.elapsed += dt; this.damageAgo += dt; this.hitTime -= dt; this.hurtTime -= dt;
-    if (this.damageAgo > 3.5) this.health = Math.min(200, this.health + dt * 16);
+    if (this.damageAgo >= 5) this.health = Math.min(200, this.health + dt * 8);
     let f = Number(this.keys.has('KeyW')) - Number(this.keys.has('KeyS')) + this.touchForward;
     let r = Number(this.keys.has('KeyD')) - Number(this.keys.has('KeyA')) + this.touchRight;
     const length = Math.hypot(f, r); if (length > 1) { f /= length; r /= length; }
@@ -393,10 +448,27 @@ export class Engine {
     this.updateGrenades(dt); this.updateEffects(dt);
     this.navClock -= dt; if (this.navClock <= 0) { this.rebuildNavigation(); this.navClock = .7; }
     this.spawnClock -= dt;
-    if (this.spawnClock <= 0) { this.spawnEnemy(); this.spawnClock = this.elapsed < 5 ? .12 : .5; }
-    for (const e of this.enemies) if (e.health) this.updateEnemy(e, dt);
+    if (this.spawnClock <= 0) { this.spawnEnemy(); this.updateBoss(); this.spawnClock = .5; }
+    for (const e of this.enemies) if (e.health && this.running) this.updateEnemy(e, dt);
   }
   private updateCamera() {
+    const fog = this.scene.fog as THREE.Fog;
+    if (this.introTime < INTRO_SECONDS) {
+      // Aerial orbit, then a descent along the clear center street. No extra world,
+      // camera, render loop, models or postprocessing are allocated for this shot.
+      const t = this.introTime / INTRO_SECONDS;
+      const ease = (v: number) => v * v * (3 - 2 * v);
+      const orbit = ease(Math.min(1, t / .65));
+      const descent = ease(Math.max(0, (t - .65) / .35));
+      this.camera.position.set(20 + 22 * (1 - orbit), 58 - 16 * orbit - (42 - EYE) * descent, 50 - 16 * orbit - 14 * descent);
+      this.camera.lookAt(20, EYE, 0);
+      this.camera.fov = 54 + 24 * descent; this.camera.updateProjectionMatrix();
+      fog.near = 55 - 20 * descent; fog.far = 110 - (110 - this.visibility) * descent;
+      this.gun.visible = false; this.muzzle.visible = false;
+      return;
+    }
+    if (this.camera.fov !== 78) { this.camera.fov = 78; this.camera.updateProjectionMatrix(); }
+    fog.near = 35; fog.far = this.visibility; this.gun.visible = true;
     this.camera.position.copy(this.player); this.camera.rotation.set(this.pitch, this.yaw, 0);
     const moving = this.running && (this.touchForward !== 0 || this.touchRight !== 0 || this.keys.has('KeyW') || this.keys.has('KeyA') || this.keys.has('KeyS') || this.keys.has('KeyD'));
     this.gun.position.y = moving && this.grounded ? Math.sin(this.elapsed * 10) * .008 : 0;
@@ -405,21 +477,35 @@ export class Engine {
   }
   private shoot() {
     this.shootCooldown = .13; this.recoil = .055; this.flash = .045;
-    this.direction.set(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
-    let distance = this.wallDistance(this.player, this.direction, 60), victim: Enemy | null = null;
+    this.updateCamera(); this.camera.updateMatrixWorld(true);
+    this.camera.getWorldDirection(this.direction);
+    const range = this.shotRange(this.player, this.direction);
+    let distance = this.wallDistance(this.player, this.direction, range), victim: Enemy | null = null;
     this.ray.set(this.player, this.direction);
-    for (const e of this.enemies) if (e.health) {
-      this.rayBox.min.set(e.x - .48, .06, e.z - .38); this.rayBox.max.set(e.x + .48, 1.75, e.z + .38);
+    for (const e of this.enemies) if (e.health && e.mesh.visible && this.loaded(e.x, e.z) && Math.hypot(e.x - this.player.x, e.z - this.player.z) <= range + 2) {
+      const scale = e.boss ? 2 : 1;
+      this.rayBox.min.set(e.x - .52 * scale, .06, e.z - .4 * scale); this.rayBox.max.set(e.x + .52 * scale, 1.75 * scale, e.z + .4 * scale);
       if (this.ray.intersectBox(this.rayBox, this.intersection)) { const d = this.player.distanceTo(this.intersection); if (d < distance) { distance = d; victim = e; } }
     }
-    if (victim) { this.kill(victim); this.hitTime = .18; }
-    else if (distance < 60) { this.intersection.copy(this.direction).multiplyScalar(distance).add(this.player); this.effect(this.intersection.x, this.intersection.y, this.intersection.z, .15, false); }
+    if (victim) { this.damageEnemy(victim, 1); this.hitTime = .18; }
+    else if (distance < range) { this.intersection.copy(this.direction).multiplyScalar(distance).add(this.player); this.effect(this.intersection.x, this.intersection.y, this.intersection.z, .15, false); }
     this.tone(130, .055, .045, 'sawtooth', 42);
   }
+  private shotRange(origin: THREE.Vector3, direction: THREE.Vector3) {
+    // Stop at the first unloaded terrain; never grow the streaming footprint for shots.
+    for (let d = 1; d <= this.visibility; d++) if (!this.loaded(origin.x + direction.x * d, origin.z + direction.z * d)) return d - 1;
+    return this.visibility;
+  }
+  private damageEnemy(e: Enemy, damage: number) {
+    if (!e.health) return;
+    e.health = Math.max(0, e.health - damage);
+    if (!e.health) this.kill(e);
+  }
   private kill(e: Enemy) {
+    if (e.boss && this.bossPending) { this.bossPending = false; this.bossDue = true; this.bossBreather = 5; }
     this.effect(e.x, 1, e.z, .65, false); this.despawn(e); this.kills++; this.tone(760, .055, .025, 'sine', 1100);
   }
-  private despawn(e: Enemy) { e.health = false; e.state = 'dead'; e.mesh.visible = false; e.sees = false; }
+  private despawn(e: Enemy) { e.health = 0; e.state = 'dead'; e.mesh.visible = false; e.sees = false; e.timer = 0; e.check = 0; e.mesh.scale.setScalar(e.boss ? 2 : 1); }
   private effect(x: number, y: number, z: number, size: number, explosion: boolean) {
     const cap = this.settings.quality === 'low' ? 16 : 32;
     for (let i = 0; i < cap; i++) {
@@ -455,34 +541,65 @@ export class Engine {
       g.mesh.scale.setScalar(.14 + (g.fuse < .5 ? Math.sin(g.fuse * 50) * .035 : 0));
       if (g.fuse <= 0) {
         g.mesh.visible = false; this.effect(p.x, p.y, p.z, 3.2, true); this.tone(90, .25, .12, 'sawtooth', 24);
-        for (const e of this.enemies) if (e.health && Math.hypot(e.x - p.x, e.z - p.z, 1 - p.y) < 8 && this.lineOfSight(p.x, p.y, p.z, e.x, 1, e.z)) this.kill(e);
+        for (const e of this.enemies) if (e.health && e.mesh.visible && this.loaded(e.x, e.z) && Math.hypot(e.x - p.x, e.z - p.z, 1 - p.y) < 8 && this.lineOfSight(p.x, p.y, p.z, e.x, 1, e.z)) this.damageEnemy(e, 5);
       }
     }
   }
 
-  private spawnEnemy() {
-    const cap = this.settings.quality === 'low' ? 8 : Math.min(16, 12 + Math.floor(this.kills / 30));
-    let count = 0; for (const e of this.enemies) if (e.health) count++;
-    if (count >= cap) return;
-    const e = this.enemies.find(item => !item.health); if (!e) return;
-    for (let attempt = 0; attempt < 16; attempt++) {
-      // Street-center candidates avoid building placement and connect to the flow grid.
+  private populationTarget() {
+    return Math.min(this.settings.quality === 'low' ? 24 : 40, Math.ceil(12 * 1.10 ** Math.min(100, Math.floor(this.survival / 60))));
+  }
+  private placeEnemy(e: Enemy, relocate = false) {
+    for (let attempt = 0; attempt < 64; attempt++) {
       const c = this.chunks[Math.floor(Math.random() * this.chunks.length)];
       const vertical = Math.random() > .5;
       const x = c.group.position.x + (vertical ? 20 : 2 + Math.random() * 36);
       const z = c.group.position.z + (vertical ? 2 + Math.random() * 36 : 20);
       const dx = x - this.player.x, dz = z - this.player.z, d = Math.hypot(dx, dz);
-      if (d < 15 || d > 46 || this.blocked(x, z, .5)) continue;
+      if (d < 25 || d > (e.boss ? 45 : 65) || this.blocked(x, z, e.boss ? 1.05 : .55)) continue;
+      const gx = Math.floor((x - this.navX) / 4), gz = Math.floor((z - this.navZ) / 4);
+      if (gx < 0 || gx >= 30 || gz < 0 || gz >= 30 || this.nav[gz * 30 + gx] < 0) continue;
       const facing = (-Math.sin(this.yaw) * dx - Math.cos(this.yaw) * dz) / d;
-      if (facing > .25) continue;
-      if (this.enemies.some(other => other.health && Math.hypot(other.x - x, other.z - z) < 2)) continue;
-      e.x = x; e.z = z; e.health = true; e.state = 'idle'; e.timer = 0; e.sees = false; e.mesh.visible = true; e.mesh.position.set(x, 0, z); return;
+      if (e.boss && !relocate) {
+        if (facing < -.15 || !this.lineOfSight(x, 2.5, z, this.player.x, this.player.y, this.player.z)) continue;
+      } else {
+        if (facing > .25 && (relocate || attempt < 48)) continue;
+        const sector = (Math.floor((Math.atan2(dz, dx) + Math.PI) / (Math.PI / 2)) + 4) % 4;
+        if (attempt < 32 && sector !== this.spawnDirection % 4) continue;
+      }
+      if (this.enemies.some(other => other !== e && other.health && other.mesh.visible && Math.hypot(other.x - x, other.z - z) < 3)) continue;
+      e.x = x; e.z = z; e.health = relocate ? e.health : e.boss ? 20 : 1;
+      e.state = 'chase'; e.timer = 1.5; e.check = Math.random() * .35; e.sees = false; e.angle = Math.random() * Math.PI * 2;
+      e.mesh.scale.setScalar(e.boss ? 2 : 1); e.eye.material = this.neon[e.boss ? 0 : 1];
+      e.mesh.visible = true; e.mesh.position.set(x, 0, z); this.spawnDirection++;
+      return true;
+    }
+    return false;
+  }
+  private spawnEnemy() {
+    // Synchronous placement has no outstanding reservations. One attempt per half second;
+    // failures retain the deficit and retry against the player's next location.
+    const ordinary = this.enemies.filter(e => !e.boss && e.health);
+    if (ordinary.length >= this.populationTarget()) return;
+    const e = this.enemies.find(e => !e.boss && !e.health);
+    if (e) this.placeEnemy(e);
+  }
+  private updateBoss() {
+    const boss = this.enemies[40];
+    if (boss.health) {
+      if (!boss.mesh.visible || !this.loaded(boss.x, boss.z) || Math.hypot(boss.x - this.player.x, boss.z - this.player.z) > 70) {
+        boss.mesh.visible = false;
+        if (this.placeEnemy(boss, true)) { this.bossAlert = 3; this.bossAlertMessage = 'BOSS APPROACHING'; }
+      }
+    } else if (this.bossDue && this.bossBreather <= 0) {
+      this.bossAlert = 4; this.bossAlertMessage = 'BOSS INCOMING';
+      if (this.placeEnemy(boss)) this.bossDue = false;
     }
   }
   private rebuildNavigation() {
     // One shared 30×30 street flow field, refreshed infrequently; no retained history.
     this.navX = -40; this.navZ = -40; this.nav.fill(-1);
-    for (let z = 0; z < 30; z++) for (let x = 0; x < 30; x++) if (this.blocked(this.navX + x * 4 + 2, this.navZ + z * 4 + 2, .65)) this.nav[z * 30 + x] = -2;
+    for (let z = 0; z < 30; z++) for (let x = 0; x < 30; x++) if (this.blocked(this.navX + x * 4 + 2, this.navZ + z * 4 + 2, 1.05)) this.nav[z * 30 + x] = -2;
     const px = Math.floor((this.player.x - this.navX) / 4), pz = Math.floor((this.player.z - this.navZ) / 4);
     const start = pz * 30 + px; if (start < 0 || start >= 900) return;
     this.nav[start] = 0; let head = 0, tail = 1; this.navQueue[0] = start;
@@ -498,26 +615,29 @@ export class Engine {
   }
   private updateEnemy(e: Enemy, dt: number) {
     const dx = this.player.x - e.x, dz = this.player.z - e.z, distance = Math.hypot(dx, dz);
-    if (distance > 57 || !this.loaded(e.x, e.z)) { this.despawn(e); return; }
+    if (distance > 70 || !this.loaded(e.x, e.z) || !e.mesh.visible) {
+      if (e.boss) e.mesh.visible = false; else this.despawn(e);
+      return;
+    }
     e.check -= dt;
     if (e.check <= 0) { e.check = .35; e.sees = distance < 30 && this.lineOfSight(e.x, 1.45, e.z, this.player.x, this.player.y, this.player.z); }
     e.timer -= dt;
     if (e.state === 'attack') {
-      e.eye.material = this.neon[2]; e.mesh.scale.setScalar(1 + Math.sin(e.timer * 25) * .025);
+      e.eye.material = this.neon[2]; e.mesh.scale.setScalar((e.boss ? 2 : 1) * (1 + Math.sin(e.timer * 25) * .025));
       if (e.timer <= 0) {
         if (distance < 20 && this.lineOfSight(e.x, 1.45, e.z, this.player.x, this.player.y, this.player.z)) {
-          this.health = Math.max(0, this.health - 4); this.damageAgo = 0; this.hurtTime = .18;
+          this.health = Math.max(0, this.health - (e.boss ? 50 : 10)); this.damageAgo = 0; this.hurtTime = .18;
           this.effect(this.player.x + dx / Math.max(distance, 1) * -.7, this.player.y - .3, this.player.z + dz / Math.max(distance, 1) * -.7, .08, false);
           this.tone(65, .06, .035, 'triangle', 40);
           if (this.health <= 0) { this.running = false; this.keys.clear(); this.firing = false; document.exitPointerLock?.(); this.syncHud(); this.callbacks.status('dead'); return; }
         }
-        e.state = 'chase'; e.timer = 1.8;
+        e.state = 'chase'; e.timer = e.boss ? 3 : 2.4;
       }
     } else {
-      e.mesh.scale.setScalar(1); e.eye.material = this.neon[1];
+      e.mesh.scale.setScalar(e.boss ? 2 : 1); e.eye.material = this.neon[e.boss ? 0 : 1];
       if (e.sees && e.state === 'idle') { e.state = 'detect'; e.timer = .35; }
       if (e.state === 'detect' && e.timer <= 0) e.state = 'chase';
-      if (e.state === 'chase' && e.sees && distance < 19 && e.timer <= 0) { e.state = 'attack'; e.timer = .75; }
+      if (e.state === 'chase' && e.sees && distance < 19 && e.timer <= 0) { e.state = 'attack'; e.timer = e.boss ? 1.1 : .75; }
       let tx = e.x, tz = e.z, speed = 2.5;
       if (e.state === 'chase') {
         if (e.sees) { if (distance > 9) { tx = this.player.x; tz = this.player.z; } }
@@ -537,8 +657,8 @@ export class Engine {
       const length = Math.hypot(tx - e.x, tz - e.z);
       if (length > .15) {
         const mx = (tx - e.x) / length * speed * dt, mz = (tz - e.z) / length * speed * dt;
-        if (!this.blocked(e.x + mx, e.z, .46)) e.x += mx; else e.angle += dt;
-        if (!this.blocked(e.x, e.z + mz, .46)) e.z += mz; else e.angle += dt;
+        if (!this.blocked(e.x + mx, e.z, e.boss ? 1.05 : .46)) e.x += mx; else e.angle += dt;
+        if (!this.blocked(e.x, e.z + mz, e.boss ? 1.05 : .46)) e.z += mz; else e.angle += dt;
       }
     }
     e.mesh.position.set(e.x, Math.sin(this.elapsed * 5 + e.angle) * .025, e.z);
@@ -563,10 +683,21 @@ export class Engine {
   }
   private syncHud() {
     const info = this.renderer.info;
-    let activeEnemies = 0, activeEffects = 0; for (const e of this.enemies) if (e.health) activeEnemies++; for (const e of this.effects) if (e.life > 0) activeEffects++;
-    this.callbacks.hud({ health: Math.ceil(this.health), kills: this.kills, grenades: this.ammo, recharge: this.recharge, hit: this.hitTime > 0, hurt: this.hurtTime > 0,
+    let activeEnemies = 0, activeEffects = 0; for (const e of this.enemies) if (e.health && !e.boss) activeEnemies++; for (const e of this.effects) if (e.life > 0) activeEffects++;
+    const boss = this.enemies[40];
+    const dx = boss.x - this.player.x, dz = boss.z - this.player.z;
+    const angle = Math.atan2(dx, -dz) + this.yaw;
+    const bearing = Math.atan2(Math.sin(angle), Math.cos(angle));
+    this.scratch.set(boss.x, 2, boss.z).project(this.camera);
+    const offscreen = !boss.mesh.visible || this.scratch.z > 1 || Math.abs(this.scratch.x) > 1 || Math.abs(this.scratch.y) > 1;
+    this.callbacks.hud({ introTime: this.introTime, survival: this.survival, population: activeEnemies, target: this.populationTarget(),
+      bossHealth: boss.health, bossPending: this.bossPending || (this.bossDue && this.bossBreather > 0),
+      bossAlert: this.bossDue && this.bossBreather <= 0 ? 'BOSS INCOMING' : this.bossAlert > 0 ? this.bossAlertMessage : '',
+      bossDistance: boss.health && boss.mesh.visible ? Math.round(Math.hypot(dx, dz)) : null,
+      bossDirection: boss.health && offscreen ? (Math.abs(bearing) > 2.4 ? 'BEHIND' : bearing > 0 ? 'RIGHT >' : '< LEFT') : '',
+      health: Math.ceil(this.health), kills: this.kills, grenades: this.ammo, recharge: this.recharge, hit: this.hitTime > 0, hurt: this.hurtTime > 0,
       district: this.chunks.find(c => c.cx === this.originX && c.cz === this.originZ)?.name || 'TRANSIT', x: this.originX * 40 + this.player.x, z: this.originZ * 40 + this.player.z, adaptive: this.adaptive,
-      diagnostics: this.diagnostics ? `FPS ${(1000 / Math.max(1, this.frameMs)).toFixed(0)} / ${this.frameMs.toFixed(1)} ms\nCalls ${info.render.calls} / Triangles ${info.render.triangles}\nChunks ${this.chunks.length}/9 / Pending ${this.queue.length}\nEnemies ${activeEnemies}/16 / Effects ${activeEffects}/32\nGPU geometry ${info.memory.geometries} / textures ${info.memory.textures}\nOrigin ${this.originX}, ${this.originZ}` : '' });
+      diagnostics: this.diagnostics ? `FPS ${(1000 / Math.max(1, this.frameMs)).toFixed(0)} / ${this.frameMs.toFixed(1)} ms\nCalls ${info.render.calls} / Triangles ${info.render.triangles}\nChunks ${this.chunks.length}/9 / Pending ${this.queue.length}\nEnemies ${activeEnemies}/${this.populationTarget()} + boss ${boss.health > 0 ? 1 : 0} / Effects ${activeEffects}/32\nGPU geometry ${info.memory.geometries} / textures ${info.memory.textures}\nOrigin ${this.originX}, ${this.originZ}` : '' });
   }
   dispose() {
     if (this.disposed) return;
