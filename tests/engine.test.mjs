@@ -116,10 +116,10 @@ test('pause/resume and twenty restarts do not add listeners or loops; dispose is
   e.dispose(); e.dispose(); assert.equal(document.listeners + window.listeners + host.listeners, 0); assert.equal(rafCount, frames - 1); assert.equal(e.renderer.disposed, true);
 });
 
-test('low quality enforces 24 enemies and allocation stays inside effect pool', () => {
+test('low quality preserves difficulty and allocation stays inside effect pool', () => {
   const { engine: e } = create(); fill(e);
   for (let i = 0; i < 40; i++) enemyAt(e, 20, i * 2);
-  e.configure({ ...settings, quality: 'low' }); assert.equal(e.enemies.filter(e => e.health).length, 24);
+  e.configure({ ...settings, quality: 'low' }); assert.equal(e.enemies.filter(e => e.health).length, 40);
   for (let i = 0; i < 100; i++) e.effect(20, 1, 20, 1, false);
   assert.equal(e.effects.filter(e => e.life > 0).length, 16); e.dispose();
 });
@@ -160,12 +160,14 @@ test('touch focus/visibility loss clears all held controls and pauses', () => {
   e.dispose();
 });
 
-test('minute targets, caps, pause and full schedule reset', () => {
+test('three-minute targets, distance, pause and full schedule reset', () => {
   const { engine: e } = create(); fill(e);
-  for (const [seconds, target] of [[0,12],[60,14],[180,16],[300,20],[3600,40]]) {
+  for (const [seconds, target] of [[0,20],[179.99,20],[180,24],[300,24],[360,29]]) {
     e.survival = seconds; assert.equal(e.populationTarget(), target);
   }
-  e.configure({...settings, quality:'low'}); assert.equal(e.populationTarget(),24);
+  e.configure({...settings, quality:'low'}); assert.equal(e.populationTarget(),29);
+  e.survival=0; e.player.x=120; assert.equal(e.populationTarget(),24);
+  e.updateStreaming(); fill(e); assert.equal(e.populationTarget(),24);
   e.pause(); const time = e.survival; e.simulate(1); assert.equal(e.survival,time);
   e.bossDue = e.bossPending = true; e.bossBreather = 4; e.reset();
   assert.equal(e.survival,0); assert.equal(e.nextBoss,180); assert.equal(e.bossDue,false);
@@ -208,7 +210,7 @@ test('continuous replacements, bounded rate and population after repeated travel
       e.spawnClock=0; e.simulate(1/60); assert.ok(e.enemies.filter(r=>r.health&&!r.boss).length<=1);
       for(let i=0;i<45;i++) e.spawnEnemy();
       assert.ok(e.enemies.filter(r=>r.health&&!r.boss).length>=12,'placement retries recover pressure');
-      assert.ok(e.enemies.filter(r=>r.health&&!r.boss).length<=40);
+      assert.ok(e.enemies.filter(r=>r.health&&!r.boss).length<=e.populationTarget());
       for(const robot of e.enemies) if(!robot.boss&&robot.health) e.damageEnemy(robot,1);
     }
   } finally { Math.random=random; e.dispose(); }
@@ -285,4 +287,24 @@ test('aerial path stays above buildings, descends in a clear street and joins pl
   e.introTime=7.9999; e.updateCamera(); assert.ok(e.camera.position.distanceTo(e.player)<.001);
   e.camera.getWorldDirection(e.direction); assert.ok(e.direction.distanceTo({x:0,y:0,z:-1})<.001);
   e.dispose();
+});
+
+ test('finite bullets, empty fire, kill rewards, HUD and restart', () => {
+  const {engine:e}=create(); fill(e);
+  assert.equal(e.bullets,200); e.shoot(); assert.equal(e.bullets,199);
+  e.bullets=1; e.shoot(); assert.equal(e.bullets,0);
+  const robot=enemyAt(e,20,10); e.flash=0; e.shoot();
+  assert.equal(robot.health,1); assert.equal(e.flash,0); assert.equal(e.bullets,0);
+  e.damageEnemy(robot,1); assert.equal(e.bullets,20);
+  e.damageEnemy(robot,1); assert.equal(e.bullets,20);
+  e.bullets=200; e.damageEnemy(enemyAt(e,20,10),1); assert.equal(e.bullets,220);
+  let hud; e.callbacks.hud=value=>{hud=value;}; e.syncHud(); assert.equal(hud.bullets,220);
+  e.reset(); assert.equal(e.bullets,200); e.dispose();
+});
+ test('enemy pool grows past forty ordinary robots without replacing boss', () => {
+  const {engine:e}=create(); fill(e); const boss=e.enemies[40];
+  for(const robot of e.enemies) if(!robot.boss) robot.health=1;
+  e.survival=900; e.placeEnemy=robot=>{robot.health=1;return true;}; e.spawnEnemy();
+  assert.equal(e.enemies.length,42); assert.equal(e.enemies[40],boss);
+  assert.equal(e.enemies[41].boss,false); e.dispose();
 });

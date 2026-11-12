@@ -5,7 +5,7 @@ import type { Hud, Settings, Status } from '../../game/types';
 import MobileControls from './MobileControls';
 import { GameMusic } from '../../game/music';
 
-const initial: Hud = { introTime: 0, survival: 0, population: 0, target: 12, bossHealth: 0, bossPending: false, bossAlert: "", bossDistance: null, bossDirection: "", health: 200, kills: 0, grenades: 3, recharge: 0, hit: false, hurt: false, district: 'CROSSROADS', x: 20, z: 20, adaptive: false, diagnostics: '' };
+const initial: Hud = { introTime: 0, survival: 0, population: 0, target: 20, bossHealth: 0, bossPending: false, bossAlert: "", bossDistance: null, bossDirection: "", health: 200, bullets: 200, kills: 0, grenades: 3, recharge: 0, hit: false, hurt: false, district: 'CROSSROADS', x: 20, z: 20, adaptive: false, diagnostics: '' };
 export default function Game() {
   const host = useRef<HTMLDivElement>(null);
   const engine = useRef<Engine | null>(null);
@@ -100,7 +100,7 @@ export default function Game() {
       </div>}
       {status === 'playing' && <div className={`crosshair ${hud.hit ? 'hit' : ''}`}><i /><b /><span /></div>}
       <div className="health"><span className="eyebrow">VITALS</span><div><span className="plus">+</span><strong>{hud.health}</strong><small>/ 200</small></div><div className="health-track"><i style={{ width: `${hud.health / 2}%` }} /></div></div>
-      <div className="weapon-info"><span className="eyebrow">DRIFT / AUTOMATIC</span><div><strong>∞</strong><span>AMMO<br /><b>ONE HIT. LIGHTS OUT.</b></span></div></div>
+      <div className="weapon-info"><span className="eyebrow">DRIFT / AUTOMATIC</span><div><strong>{hud.bullets}</strong><span>AMMO<br /><b>ONE HIT. LIGHTS OUT.</b></span></div></div>
       <div className="combat-stats"><div><span className="eyebrow">ELIMINATIONS</span><strong>{String(hud.kills).padStart(3, '0')}</strong></div><div><span className="eyebrow">{touch ? 'GRENADES' : 'G / GRENADES'}</span><p>{[0, 1, 2].map(i => <i className={i < hud.grenades ? 'charged' : ''} key={i} />)}</p><small>{hud.grenades < 3 ? `+1 IN ${Math.ceil(hud.recharge)}s` : 'FULLY CHARGED'}</small></div></div>
       {hud.adaptive && <div className="adaptive">ADAPTIVE RESOLUTION ACTIVE</div>}
       {hud.diagnostics && <pre className="diagnostics">{hud.diagnostics}</pre>}
@@ -124,7 +124,7 @@ export default function Game() {
         <div className="eyebrow intro-kicker"><span /> {status === 'dead' ? 'SIGNAL LOST' : status === 'paused' ? 'MAIN MENU / RUN PAUSED' : 'ENDLESS CITY. ONE OPERATIVE.'}</div>
         <h1>{status === 'dead' ? <>GAME<br /><em>OVER</em></> : <>NEON<br /><em>DRIFT</em><span className="title-dot">®</span></>}</h1>
         <p className="tagline">{status === 'dead' ? `${hud.kills} robots offline. The city is still waiting.` : status === 'paused' ? 'Your city. Your pace. Jump back into the grid.' : 'After hours. No limits.'}</p>
-        <p className="description">{status === 'error' ? message : status === 'loading' ? 'Initializing your neighborhood…' : status === 'start' ? <>A city without an edge. Robots with one weakness.<br />Keep moving. Make every shot count.</> : message || (status === 'ready' ? (touch ? 'Your district is ready. Tap below to play.' : 'Your district is ready. Click below to capture your mouse.') : 'Unlimited ammo. One-shot enemies. Endless streets.')}</p>
+        <p className="description">{status === 'error' ? message : status === 'loading' ? 'Initializing your neighborhood…' : status === 'start' ? <>A city without an edge. Robots with one weakness.<br />Keep moving. Make every shot count.</> : message || (status === 'ready' ? (touch ? 'Your district is ready. Tap below to play.' : 'Your district is ready. Click below to capture your mouse.') : '200 starting rounds. +20 per elimination. Escalating hostiles.')}</p>
         <div className="actions">
           <button className="primary" disabled={status === 'loading'} onClick={status === 'dead' ? restart : status === 'error' ? () => location.reload() : play}><span>{status === 'loading' ? 'INITIALIZING' : status === 'error' ? 'RELOAD & RETRY' : status === 'dead' ? 'RESTART' : status === 'paused' ? 'RESUME RUN' : status === 'ready' ? 'ENTER THE GRID' : 'ENTER THE GRID'}</span><span>{status === 'loading' ? '···' : '↗'}</span></button>
           {status === 'dead' && <button className="restart" onClick={mainMenu}>MAIN MENU</button>}

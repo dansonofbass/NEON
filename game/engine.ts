@@ -47,6 +47,7 @@ export class Engine {
   private hitTime = 0;
   private hurtTime = 0;
   private ammo = 3;
+  private bullets = 200;
   private recharge = 0;
   private grenadeLatch = false;
   private enemies: Enemy[] = [];
@@ -270,7 +271,6 @@ export class Engine {
     this.settings = { ...settings }; this.adaptive = false; this.slowTime = 0; this.resize();
     if (!settings.sound) void this.audio?.suspend().catch(() => {});
     else if (this.audio) void this.audio.resume().catch(() => {});
-    if (settings.quality === 'low') for (let i = 24; i < 40; i++) this.despawn(this.enemies[i]);
   }
   private resize() {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.settings.quality === 'low' ? .8 : this.adaptive ? .85 : 1.25));
@@ -280,7 +280,7 @@ export class Engine {
   reset() {
     this.introTime = 0; this.introStarted = false;
     this.clearTouchInput();
-    this.running = false; this.keys.clear(); this.firing = false; this.health = 200; this.kills = 0; this.ammo = 3; this.recharge = 0;
+    this.running = false; this.keys.clear(); this.firing = false; this.health = 200; this.kills = 0; this.bullets = 200; this.ammo = 3; this.recharge = 0;
     this.damageAgo = 10; this.hurtTime = 0; this.hitTime = 0; this.shootCooldown = 0; this.grenadeLatch = false;
     this.flash = 0; this.recoil = 0;
     this.survival = 0; this.nextBoss = 180; this.bossDue = false; this.bossPending = false;
@@ -476,6 +476,8 @@ export class Engine {
     this.muzzle.visible = this.flash > 0;
   }
   private shoot() {
+    if (this.bullets <= 0) return;
+    this.bullets--;
     this.shootCooldown = .13; this.recoil = .055; this.flash = .045;
     this.updateCamera(); this.camera.updateMatrixWorld(true);
     this.camera.getWorldDirection(this.direction);
@@ -503,7 +505,7 @@ export class Engine {
   }
   private kill(e: Enemy) {
     if (e.boss && this.bossPending) { this.bossPending = false; this.bossDue = true; this.bossBreather = 5; }
-    this.effect(e.x, 1, e.z, .65, false); this.despawn(e); this.kills++; this.tone(760, .055, .025, 'sine', 1100);
+    this.effect(e.x, 1, e.z, .65, false); this.despawn(e); this.kills++; this.bullets += 20; this.tone(760, .055, .025, 'sine', 1100);
   }
   private despawn(e: Enemy) { e.health = 0; e.state = 'dead'; e.mesh.visible = false; e.sees = false; e.timer = 0; e.check = 0; e.mesh.scale.setScalar(e.boss ? 2 : 1); }
   private effect(x: number, y: number, z: number, size: number, explosion: boolean) {
@@ -547,7 +549,9 @@ export class Engine {
   }
 
   private populationTarget() {
-    return Math.min(this.settings.quality === 'low' ? 24 : 40, Math.ceil(12 * 1.10 ** Math.min(100, Math.floor(this.survival / 60))));
+    // Use world coordinates so streaming across chunks preserves distance from spawn.
+    const distance = Math.hypot(this.originX * CHUNK + this.player.x - 20, this.originZ * CHUNK + this.player.z - 20);
+    return Math.ceil(20 * (1 + distance / 500) * 1.2 ** Math.floor(this.survival / 180));
   }
   private placeEnemy(e: Enemy, relocate = false) {
     for (let attempt = 0; attempt < 64; attempt++) {
@@ -581,8 +585,9 @@ export class Engine {
     // failures retain the deficit and retry against the player's next location.
     const ordinary = this.enemies.filter(e => !e.boss && e.health);
     if (ordinary.length >= this.populationTarget()) return;
-    const e = this.enemies.find(e => !e.boss && !e.health);
-    if (e) this.placeEnemy(e);
+    let e = this.enemies.find(e => !e.boss && !e.health);
+    if (!e) { e = this.buildEnemy(this.enemies.length); this.enemies.push(e); }
+    this.placeEnemy(e);
   }
   private updateBoss() {
     const boss = this.enemies[40];
@@ -695,7 +700,7 @@ export class Engine {
       bossAlert: this.bossDue && this.bossBreather <= 0 ? 'BOSS INCOMING' : this.bossAlert > 0 ? this.bossAlertMessage : '',
       bossDistance: boss.health && boss.mesh.visible ? Math.round(Math.hypot(dx, dz)) : null,
       bossDirection: boss.health && offscreen ? (Math.abs(bearing) > 2.4 ? 'BEHIND' : bearing > 0 ? 'RIGHT >' : '< LEFT') : '',
-      health: Math.ceil(this.health), kills: this.kills, grenades: this.ammo, recharge: this.recharge, hit: this.hitTime > 0, hurt: this.hurtTime > 0,
+      health: Math.ceil(this.health), bullets: this.bullets, kills: this.kills, grenades: this.ammo, recharge: this.recharge, hit: this.hitTime > 0, hurt: this.hurtTime > 0,
       district: this.chunks.find(c => c.cx === this.originX && c.cz === this.originZ)?.name || 'TRANSIT', x: this.originX * 40 + this.player.x, z: this.originZ * 40 + this.player.z, adaptive: this.adaptive,
       diagnostics: this.diagnostics ? `FPS ${(1000 / Math.max(1, this.frameMs)).toFixed(0)} / ${this.frameMs.toFixed(1)} ms\nCalls ${info.render.calls} / Triangles ${info.render.triangles}\nChunks ${this.chunks.length}/9 / Pending ${this.queue.length}\nEnemies ${activeEnemies}/${this.populationTarget()} + boss ${boss.health > 0 ? 1 : 0} / Effects ${activeEffects}/32\nGPU geometry ${info.memory.geometries} / textures ${info.memory.textures}\nOrigin ${this.originX}, ${this.originZ}` : '' });
   }
