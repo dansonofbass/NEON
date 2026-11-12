@@ -13,7 +13,7 @@ const COLORS = [0x38e8eb, 0xf454b8, 0xffbf60];
 export class Engine {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(78, 1, .08, 150);
+  private camera = new THREE.PerspectiveCamera(78, 1, .08, 180);
   private boxGeometry = new THREE.BoxGeometry(1, 1, 1);
   private sphereGeometry = new THREE.IcosahedronGeometry(1, 1);
   private materials: THREE.Material[] = [];
@@ -76,9 +76,8 @@ export class Engine {
   private bossBreather = 0;
   private bossAlert = 0;
   private bossAlertMessage = 'BOSS INCOMING';
-  private spawnDirection = 0;
   private clockScale = 1;
-  private readonly visibility = 78;
+  private readonly visibility = 156;
   private frameMs = 16.67;
   private slowTime = 0;
   private adaptive = false;
@@ -223,9 +222,9 @@ export class Engine {
   }
   private advanceIntro(dt: number) {
     if (!this.running || document.hidden || this.introTime >= INTRO_SECONDS) return;
-    // Start the eight-second shot only after all nine existing chunks are ready.
+    // Start the eight-second shot only after all nearby chunks are ready.
     if (!this.introStarted) {
-      if (this.queue.length || this.chunks.length < 9) return;
+      if (this.queue.length || this.chunks.length < 25) return;
       this.introStarted = true; this.callbacks.status('intro'); this.syncHud(); return;
     }
     this.introTime = Math.min(INTRO_SECONDS, this.introTime + dt);
@@ -284,7 +283,7 @@ export class Engine {
     this.damageAgo = 10; this.hurtTime = 0; this.hitTime = 0; this.shootCooldown = 0; this.grenadeLatch = false;
     this.flash = 0; this.recoil = 0;
     this.survival = 0; this.nextBoss = 180; this.bossDue = false; this.bossPending = false;
-    this.bossBreather = 0; this.bossAlert = 0; this.bossAlertMessage = 'BOSS INCOMING'; this.spawnDirection = 0; this.hudClock = 0;
+    this.bossBreather = 0; this.bossAlert = 0; this.bossAlertMessage = 'BOSS INCOMING'; this.hudClock = 0;
     this.vertical = 0; this.grounded = true; this.yaw = 0; this.pitch = 0; this.elapsed = 0; this.accumulator = 0;
     this.originX = 0; this.originZ = 0; this.player.set(20, EYE, 20);
     for (const c of this.chunks) this.removeChunk(c); this.chunks.length = 0; this.queue.length = 0;
@@ -350,10 +349,10 @@ export class Engine {
       this.navClock = 0;
     }
     for (let i = this.chunks.length - 1; i >= 0; i--) {
-      const c = this.chunks[i]; if (Math.abs(c.cx - cx) > 1 || Math.abs(c.cz - cz) > 1) { this.removeChunk(c); this.chunks.splice(i, 1); }
+      const c = this.chunks[i]; if (Math.abs(c.cx - cx) > 2 || Math.abs(c.cz - cz) > 2) { this.removeChunk(c); this.chunks.splice(i, 1); }
     }
     this.queue.length = 0;
-    for (let x = cx - 1; x <= cx + 1; x++) for (let z = cz - 1; z <= cz + 1; z++) {
+    for (let x = cx - 2; x <= cx + 2; x++) for (let z = cz - 2; z <= cz + 2; z++) {
       if (!this.chunks.some(c => c.cx === x && c.cz === z)) this.queue.push({ cx: x, cz: z });
     }
     const tx = this.player.x - Math.sin(this.yaw) * 16, tz = this.player.z - Math.cos(this.yaw) * 16;
@@ -566,16 +565,12 @@ export class Engine {
       const facing = (-Math.sin(this.yaw) * dx - Math.cos(this.yaw) * dz) / d;
       if (e.boss && !relocate) {
         if (facing < -.15 || !this.lineOfSight(x, 2.5, z, this.player.x, this.player.y, this.player.z)) continue;
-      } else {
-        if (facing > .25 && (relocate || attempt < 48)) continue;
-        const sector = (Math.floor((Math.atan2(dz, dx) + Math.PI) / (Math.PI / 2)) + 4) % 4;
-        if (attempt < 32 && sector !== this.spawnDirection % 4) continue;
       }
       if (this.enemies.some(other => other !== e && other.health && other.mesh.visible && Math.hypot(other.x - x, other.z - z) < 3)) continue;
       e.x = x; e.z = z; e.health = relocate ? e.health : e.boss ? 20 : 1;
       e.state = 'chase'; e.timer = 1.5; e.check = Math.random() * .35; e.sees = false; e.angle = Math.random() * Math.PI * 2;
       e.mesh.scale.setScalar(e.boss ? 2 : 1); e.eye.material = this.neon[e.boss ? 0 : 1];
-      e.mesh.visible = true; e.mesh.position.set(x, 0, z); this.spawnDirection++;
+      e.mesh.visible = true; e.mesh.position.set(x, 0, z);
       return true;
     }
     return false;
@@ -620,7 +615,7 @@ export class Engine {
   }
   private updateEnemy(e: Enemy, dt: number) {
     const dx = this.player.x - e.x, dz = this.player.z - e.z, distance = Math.hypot(dx, dz);
-    if (distance > 70 || !this.loaded(e.x, e.z) || !e.mesh.visible) {
+    if (distance > this.visibility || !this.loaded(e.x, e.z) || !e.mesh.visible) {
       if (e.boss) e.mesh.visible = false; else this.despawn(e);
       return;
     }
@@ -702,7 +697,7 @@ export class Engine {
       bossDirection: boss.health && offscreen ? (Math.abs(bearing) > 2.4 ? 'BEHIND' : bearing > 0 ? 'RIGHT >' : '< LEFT') : '',
       health: Math.ceil(this.health), bullets: this.bullets, kills: this.kills, grenades: this.ammo, recharge: this.recharge, hit: this.hitTime > 0, hurt: this.hurtTime > 0,
       district: this.chunks.find(c => c.cx === this.originX && c.cz === this.originZ)?.name || 'TRANSIT', x: this.originX * 40 + this.player.x, z: this.originZ * 40 + this.player.z, adaptive: this.adaptive,
-      diagnostics: this.diagnostics ? `FPS ${(1000 / Math.max(1, this.frameMs)).toFixed(0)} / ${this.frameMs.toFixed(1)} ms\nCalls ${info.render.calls} / Triangles ${info.render.triangles}\nChunks ${this.chunks.length}/9 / Pending ${this.queue.length}\nEnemies ${activeEnemies}/${this.populationTarget()} + boss ${boss.health > 0 ? 1 : 0} / Effects ${activeEffects}/32\nGPU geometry ${info.memory.geometries} / textures ${info.memory.textures}\nOrigin ${this.originX}, ${this.originZ}` : '' });
+      diagnostics: this.diagnostics ? `FPS ${(1000 / Math.max(1, this.frameMs)).toFixed(0)} / ${this.frameMs.toFixed(1)} ms\nCalls ${info.render.calls} / Triangles ${info.render.triangles}\nChunks ${this.chunks.length}/25 / Pending ${this.queue.length}\nEnemies ${activeEnemies}/${this.populationTarget()} + boss ${boss.health > 0 ? 1 : 0} / Effects ${activeEffects}/32\nGPU geometry ${info.memory.geometries} / textures ${info.memory.textures}\nOrigin ${this.originX}, ${this.originZ}` : '' });
   }
   dispose() {
     if (this.disposed) return;

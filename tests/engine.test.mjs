@@ -85,22 +85,22 @@ test('200-health reset, grounded jumping, regeneration, damage telegraph, and de
   e.reset(); assert.equal(e.health, 200); assert.equal(e.kills, 0); assert.equal(e.ammo, 3); e.dispose();
 });
 
-test('10 km of streaming keeps nine chunks, fixed pools and bounded scene objects', () => {
+test('10 km of streaming keeps 25 chunks, fixed pools and bounded scene objects', () => {
   const { engine: e } = create(); fill(e);
   let maxObjects = 0;
   const original = JSON.stringify(e.chunks.find(c => c.cx === 0 && c.cz === 0).boxes);
   for (let i = 0; i < 250; i++) {
     e.player.x = 40.01; e.updateStreaming();
-    assert.ok(e.chunks.length <= 9); assert.ok(e.queue.length <= 5);
-    fill(e); assert.equal(e.chunks.length, 9); assert.ok(e.player.x < 40);
+    assert.ok(e.chunks.length <= 25); assert.ok(e.queue.length <= 9);
+    fill(e); assert.equal(e.chunks.length, 25); assert.ok(e.player.x < 40);
     let objects = 0; e.scene.traverse(() => objects++); maxObjects = Math.max(maxObjects, objects);
   }
-  assert.equal(e.originX, 250); assert.ok(maxObjects < 650);
+  assert.equal(e.originX, 250); assert.ok(maxObjects < 1100);
   assert.equal(e.enemies.length, 41); assert.equal(e.effects.length, 32); assert.equal(e.grenades.length, 3);
   e.player.x = -10000 + 20; e.updateStreaming(); fill(e);
   assert.equal(e.originX, 0); assert.equal(JSON.stringify(e.chunks.find(c => c.cx === 0 && c.cz === 0).boxes), original);
-  assert.equal(e.blocked(80, 20, .38), true, 'unloaded boundary is solid');
-  console.log(`Streaming observation: 250 transitions / 10 km; max ${maxObjects} scene objects; 9 chunks; fixed 40 ordinary enemies + 1 boss, 32 effects, 3 grenades. GPU not measured.`);
+  assert.equal(e.blocked(120, 20, .38), true, 'unloaded boundary is solid');
+  console.log(`Streaming observation: 250 transitions / 10 km; max ${maxObjects} scene objects; 25 chunks; fixed 40 ordinary enemies + 1 boss, 32 effects, 3 grenades. GPU not measured.`);
   e.dispose();
 });
 
@@ -261,7 +261,7 @@ test('cinematic waits for streaming, lasts eight active seconds and hands off wi
   e.advanceIntro(.001); assert.equal(e.introTime,8); assert.equal(statuses.at(-1),'playing');
   assert.equal(e.gun.visible,true); assert.equal(e.camera.fov,78); assert.ok(e.camera.position.equals(e.player));
   assert.equal(e.survival,0); e.simulate(1/60); assert.ok(e.survival>0);
-  assert.equal(e.chunks.length,9); e.dispose();
+  assert.equal(e.chunks.length,25); e.dispose();
 });
 
 test('cinematic pauses on focus loss, resumes remaining time and restarts cleanly', () => {
@@ -307,4 +307,27 @@ test('aerial path stays above buildings, descends in a clear street and joins pl
   e.survival=900; e.placeEnemy=robot=>{robot.health=1;return true;}; e.spawnEnemy();
   assert.equal(e.enemies.length,42); assert.equal(e.enemies[40],boss);
   assert.equal(e.enemies[41].boss,false); e.dispose();
+});
+
+ test('double-range shots hit at 140 meters, stop at 156 and respect walls', () => {
+  const {engine:e}=create(); fill(e);
+  e.player.set(20,1.65,75); const robot=enemyAt(e,20,-65);
+  e.shoot(); assert.equal(robot.health,0,'140 meter hit on a clear street');
+  const far=enemyAt(e,20,-79); e.player.z=79; e.shoot(); assert.equal(far.health,1,'158 meters exceeds range');
+  e.player.set(20,1.65,75); const blocked=enemyAt(e,20,-65);
+  e.chunks[0].boxes.push({x:20,z:5,w:4,d:2,h:4,accent:0});
+  e.shoot(); assert.equal(blocked.health,1,'intervening wall blocks long-range fire'); e.dispose();
+});
+ test('ordinary spawn samples all directions independently of camera heading', () => {
+  const {engine:e}=create(); fill(e); e.rebuildNavigation();
+  const random=Math.random; let seed=321; Math.random=()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296);
+  try {
+    const robot=e.enemies[0], quadrants=new Set(); let ahead=0;
+    for(let i=0;i<200;i++) {
+      e.despawn(robot); assert.equal(e.placeEnemy(robot),true);
+      const dx=robot.x-e.player.x,dz=robot.z-e.player.z;
+      quadrants.add(`${dx>=0}:${dz>=0}`); if(-dz/Math.hypot(dx,dz)>.25) ahead++;
+    }
+    assert.equal(quadrants.size,4); assert.ok(ahead>40,'front spawns are allowed without a late fallback');
+  } finally {Math.random=random;e.dispose();}
 });
