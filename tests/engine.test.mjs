@@ -388,3 +388,40 @@ test('menu patrols reuse robots on loaded streets and join gameplay after the ca
   assert.deepEqual(e.enemies,pool); assert.equal(e.survival,0); assert.equal(e.health,200);
   e.dispose();
 });
+
+
+test('50-round magazine, 400 total cap and kill rewards only replenish reserve', () => {
+  const {engine:e}=create(); fill(e);
+  assert.equal(e.magazine,50); assert.equal(e.bullets,200);
+  for(let i=0;i<50;i++) e.shoot();
+  assert.equal(e.magazine,0); assert.equal(e.bullets,150);
+  e.shoot(); assert.equal(e.bullets,150,'empty magazine cannot use reserve directly');
+  e.bullets=395; e.damageEnemy(enemyAt(e,20,10),1);
+  assert.equal(e.bullets,400); assert.equal(e.magazine,0);
+  e.damageEnemy(enemyAt(e,20,10),1); assert.equal(e.bullets,400);
+  let hud; e.callbacks.hud=value=>{hud=value;}; e.syncHud();
+  assert.equal(hud.magazine,0); assert.equal(hud.bullets,400);
+  e.reset(); assert.equal(e.magazine,50); assert.equal(e.bullets,200); assert.equal(e.reloadTime,0);
+  e.dispose();
+});
+
+test('R reload blocks shooting, freezes while paused and preserves total ammunition', () => {
+  const {engine:e}=create(); fill(e); e.running=true;
+  e.magazine=10; e.bullets=90;
+  const key=new Event('keydown',{cancelable:true}); Object.assign(key,{code:'KeyR',repeat:false});
+  document.dispatchEvent(key); assert.equal(key.defaultPrevented,true); assert.equal(e.reloadTime,1.6);
+  e.shoot(); assert.equal(e.bullets,90); assert.equal(e.magazine,10);
+  e.reload(); assert.equal(e.reloadTime,1.6);
+  e.simulate(.4); assert.ok(Math.abs(e.reloadTime-1.2)<.0001);
+  e.pause(); e.simulate(5); assert.ok(Math.abs(e.reloadTime-1.2)<.0001);
+  e.running=true; e.simulate(1.3);
+  assert.equal(e.reloadTime,0); assert.equal(e.magazine,50); assert.equal(e.bullets,90);
+  e.magazine=4; e.bullets=17; e.reload(); e.simulate(1.7);
+  assert.equal(e.magazine,17); assert.equal(e.bullets,17,'partial reload consumes only available reserve');
+  e.reload(); assert.equal(e.reloadTime,0,'no reserve means no reload');
+  e.magazine=50; e.bullets=100; e.reload(); assert.equal(e.reloadTime,0,'full magazine cannot reload');
+  e.magazine=0; e.introTime=0; e.reload(); assert.equal(e.reloadTime,0,'intro blocks reloading');
+  e.introTime=8; e.reload(); assert.equal(e.reloadTime,1.6);
+  e.reset(); assert.equal(e.reloadTime,0); assert.equal(e.magazine,50);
+  e.dispose();
+});

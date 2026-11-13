@@ -7,6 +7,7 @@ type Enemy = { mesh: THREE.Group; eye: THREE.Mesh; x: number; z: number; health:
 type Effect = { mesh: THREE.Mesh; life: number; max: number; size: number; explosion: boolean };
 type Grenade = { mesh: THREE.Mesh; velocity: THREE.Vector3; fuse: number };
 const INTRO_SECONDS = 8;
+const MAGAZINE_SIZE = 50, MAX_AMMO = 400, RELOAD_SECONDS = 1.6;
 const STEP = 1 / 60, RADIUS = .38, EYE = 1.65;
 const COLORS = [0x38e8eb, 0xf454b8, 0xffbf60];
 
@@ -47,7 +48,10 @@ export class Engine {
   private hitTime = 0;
   private hurtTime = 0;
   private ammo = 3;
+  // Total ammunition includes the rounds currently loaded.
   private bullets = 200;
+  private magazine = MAGAZINE_SIZE;
+  private reloadTime = 0;
   private recharge = 0;
   private grenadeLatch = false;
   private enemies: Enemy[] = [];
@@ -142,9 +146,10 @@ export class Engine {
     this.listen(document, 'keydown', ((event: KeyboardEvent) => {
       if (event.code === 'F3' && process.env.NODE_ENV === 'development') { event.preventDefault(); this.diagnostics = !this.diagnostics; }
       if (!this.running) return;
-      if (['Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'KeyG', 'Escape'].includes(event.code)) event.preventDefault();
+      if (['Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'KeyG', 'KeyR', 'Escape'].includes(event.code)) event.preventDefault();
       if (event.code === 'Escape') { this.pause(); return; }
       if (this.introTime < INTRO_SECONDS) return;
+      if (event.code === 'KeyR') { if (!event.repeat) this.reload(); return; }
       this.keys.add(event.code);
     }) as EventListener);
     this.listen(document, 'keyup', ((event: KeyboardEvent) => { this.keys.delete(event.code); }) as EventListener);
@@ -309,6 +314,13 @@ export class Engine {
     this.firing = held;
     if (held) { this.initAudio(); if (this.shootCooldown <= 0) this.shoot(); }
   }
+  reload() {
+    if (!this.running || this.preview || document.hidden || this.introTime < INTRO_SECONDS || this.health <= 0) return;
+    if (this.reloadTime > 0 || this.magazine >= MAGAZINE_SIZE || this.bullets <= this.magazine) return;
+    this.reloadTime = RELOAD_SECONDS;
+    this.firing = false; this.flash = 0;
+    this.syncHud();
+  }
   touchAction(action: 'jump' | 'grenade') {
     if (!this.running || !this.touchMode || this.introTime < INTRO_SECONDS) return;
     this.initAudio();
@@ -330,7 +342,7 @@ export class Engine {
   reset() {
     this.introTime = 0; this.introStarted = false; this.aerialOffset.set(0, 0, 0);
     this.clearTouchInput();
-    this.running = false; this.keys.clear(); this.firing = false; this.health = 200; this.kills = 0; this.bullets = 200; this.ammo = 3; this.recharge = 0;
+    this.running = false; this.keys.clear(); this.firing = false; this.health = 200; this.kills = 0; this.bullets = 200; this.magazine = MAGAZINE_SIZE; this.reloadTime = 0; this.ammo = 3; this.recharge = 0;
     this.damageAgo = 10; this.hurtTime = 0; this.hitTime = 0; this.shootCooldown = 0; this.grenadeLatch = false;
     this.flash = 0; this.recoil = 0;
     this.survival = 0; this.nextBoss = 180; this.bossDue = false; this.bossPending = false;
@@ -498,6 +510,13 @@ export class Engine {
     this.vertical -= 20 * dt; this.player.y += this.vertical * dt;
     if (this.player.y <= EYE) { this.player.y = EYE; this.vertical = 0; this.grounded = true; }
     if (this.player.x < 0 || this.player.x >= CHUNK || this.player.z < 0 || this.player.z >= CHUNK) this.updateStreaming();
+    if (this.reloadTime > 0) {
+      this.reloadTime = Math.max(0, this.reloadTime - dt);
+      if (this.reloadTime === 0) {
+        this.magazine = Math.min(MAGAZINE_SIZE, this.bullets);
+        this.syncHud();
+      }
+    }
     this.shootCooldown -= dt; this.flash -= dt; this.recoil *= Math.exp(-dt * 15);
     if (this.firing && this.shootCooldown <= 0) this.shoot();
     if (this.keys.has('KeyG') && !this.grenadeLatch) { this.throwGrenade(); this.grenadeLatch = true; }
@@ -540,12 +559,15 @@ export class Engine {
     this.camera.position.copy(this.player); this.camera.rotation.set(this.pitch, this.yaw, 0);
     const moving = this.running && (this.touchForward !== 0 || this.touchRight !== 0 || this.keys.has('KeyW') || this.keys.has('KeyA') || this.keys.has('KeyS') || this.keys.has('KeyD'));
     this.gun.position.y = moving && this.grounded ? Math.sin(this.elapsed * 10) * .008 : 0;
+    const reloadDip = this.reloadTime > 0 ? Math.sin(Math.PI * this.reloadTime / RELOAD_SECONDS) : 0;
+    this.gun.position.y -= reloadDip * .22;
+    this.gun.rotation.x = -reloadDip * .35;
     this.gun.position.z = this.settings.recoil ? this.recoil : 0;
     this.muzzle.visible = this.flash > 0;
   }
   private shoot() {
-    if (this.bullets <= 0) return;
-    this.bullets--;
+    if (this.bullets <= 0 || this.magazine <= 0 || this.reloadTime > 0) return;
+    this.bullets--; this.magazine--;
     this.shootCooldown = .13; this.recoil = .055; this.flash = .045;
     this.updateCamera(); this.camera.updateMatrixWorld(true);
     this.camera.getWorldDirection(this.direction);
@@ -573,7 +595,7 @@ export class Engine {
   }
   private kill(e: Enemy) {
     if (e.boss && this.bossPending) { this.bossPending = false; this.bossDue = true; this.bossBreather = 5; }
-    this.effect(e.x, 1, e.z, .65, false); this.despawn(e); this.kills++; this.bullets += 20; this.tone(760, .055, .025, 'sine', 1100);
+    this.effect(e.x, 1, e.z, .65, false); this.despawn(e); this.kills++; this.bullets = Math.min(MAX_AMMO, this.bullets + 20); this.tone(760, .055, .025, 'sine', 1100);
   }
   private despawn(e: Enemy) { e.health = 0; e.state = 'dead'; e.mesh.visible = false; e.sees = false; e.timer = 0; e.check = 0; e.mesh.scale.setScalar(e.boss ? 2 : 1); }
   private effect(x: number, y: number, z: number, size: number, explosion: boolean) {
@@ -764,7 +786,7 @@ export class Engine {
       bossAlert: this.bossDue && this.bossBreather <= 0 ? 'BOSS INCOMING' : this.bossAlert > 0 ? this.bossAlertMessage : '',
       bossDistance: boss.health && boss.mesh.visible ? Math.round(Math.hypot(dx, dz)) : null,
       bossDirection: boss.health && offscreen ? (Math.abs(bearing) > 2.4 ? 'BEHIND' : bearing > 0 ? 'RIGHT >' : '< LEFT') : '',
-      health: Math.ceil(this.health), bullets: this.bullets, kills: this.kills, grenades: this.ammo, recharge: this.recharge, hit: this.hitTime > 0, hurt: this.hurtTime > 0,
+      health: Math.ceil(this.health), bullets: this.bullets, magazine: this.magazine, reloadTime: this.reloadTime, kills: this.kills, grenades: this.ammo, recharge: this.recharge, hit: this.hitTime > 0, hurt: this.hurtTime > 0,
       district: this.chunks.find(c => c.cx === this.originX && c.cz === this.originZ)?.name || 'TRANSIT', x: this.originX * 40 + this.player.x, z: this.originZ * 40 + this.player.z, adaptive: this.adaptive,
       diagnostics: this.diagnostics ? `FPS ${(1000 / Math.max(1, this.frameMs)).toFixed(0)} / ${this.frameMs.toFixed(1)} ms\nCalls ${info.render.calls} / Triangles ${info.render.triangles}\nChunks ${this.chunks.length}/25 / Pending ${this.queue.length}\nEnemies ${activeEnemies}/${this.populationTarget()} + boss ${boss.health > 0 ? 1 : 0} / Effects ${activeEffects}/32\nGPU geometry ${info.memory.geometries} / textures ${info.memory.textures}\nOrigin ${this.originX}, ${this.originZ}` : '' });
   }

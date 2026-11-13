@@ -197,3 +197,15 @@ html, body { height:100%; overflow:hidden; }
 .landing-menu .tagline { margin:16px 0 22px; font-size:8px; }
 .landing-menu .primary { height:48px; }
 }
+
+.reload-status { position:absolute; z-index:8; left:50%; bottom:max(32px,env(safe-area-inset-bottom)); transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:8px; }
+.reload-status button { min-height:36px; padding:8px 14px; border:1px solid #9cc6d566; border-radius:3px; background:#07101ed9; color:#c6ebf0; font-size:10px; letter-spacing:1.5px; touch-action:manipulation; }
+.reload-status.low-ammo button { color:#ffd995; border-color:#f4be6d99; }
+.reload-status button:disabled { cursor:default; opacity:.75; }
+.compact-ammo { display:none; color:#e8f7ff; font-size:19px; font-variant-numeric:tabular-nums; }
+.compact-ammo small { margin-left:6px; color:#9bbbc7; font-size:10px; }
+@media(max-width:650px), (hover:none) and (pointer:coarse) {
+.compact-ammo { display:block; }
+.reload-status { bottom:max(20px,env(safe-area-inset-bottom)); }
+.reload-status button { min-height:44px; }
+}

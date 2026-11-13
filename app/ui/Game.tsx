@@ -5,7 +5,7 @@ import type { Hud, Settings, Status } from '../../game/types';
 import MobileControls from './MobileControls';
 import { GameMusic } from '../../game/music';
 
-const initial: Hud = { introTime: 0, survival: 0, population: 0, target: 20, bossHealth: 0, bossPending: false, bossAlert: "", bossDistance: null, bossDirection: "", health: 200, bullets: 200, kills: 0, grenades: 3, recharge: 0, hit: false, hurt: false, district: 'CROSSROADS', x: 20, z: 20, adaptive: false, diagnostics: '' };
+const initial: Hud = { introTime: 0, survival: 0, population: 0, target: 20, bossHealth: 0, bossPending: false, bossAlert: "", bossDistance: null, bossDirection: "", health: 200, bullets: 200, magazine: 50, reloadTime: 0, kills: 0, grenades: 3, recharge: 0, hit: false, hurt: false, district: 'CROSSROADS', x: 20, z: 20, adaptive: false, diagnostics: '' };
 export default function Game() {
   const host = useRef<HTMLDivElement>(null);
   const engine = useRef<Engine | null>(null);
@@ -96,10 +96,20 @@ export default function Game() {
       </div>}
       {status === 'playing' && <div className={`crosshair ${hud.hit ? 'hit' : ''}`}><i /><b /><span /></div>}
       <div className="health"><span className="eyebrow">VITALS</span><div><span className="plus">+</span><strong>{hud.health}</strong><small>/ 200</small></div><div className="health-track"><i style={{ width: `${hud.health / 2}%` }} /></div></div>
-      <div className="weapon-info"><span className="eyebrow">DRIFT / AUTOMATIC</span><div><strong>{hud.bullets}</strong><span>AMMO<br /><b>ONE HIT. LIGHTS OUT.</b></span></div></div>
+      <div className="weapon-info"><span className="eyebrow">DRIFT / AUTOMATIC</span><div aria-label={`${hud.magazine} loaded, ${hud.bullets} total rounds`}><strong>{hud.magazine}</strong><span>/{hud.bullets}</span></div></div>
       <div className="combat-stats"><div><span className="eyebrow">ELIMINATIONS</span><strong>{String(hud.kills).padStart(3, '0')}</strong></div><div><span className="eyebrow">{touch ? 'GRENADES' : 'G / GRENADES'}</span><p>{[0, 1, 2].map(i => <i className={i < hud.grenades ? 'charged' : ''} key={i} />)}</p><small>{hud.grenades < 3 ? `+1 IN ${Math.ceil(hud.recharge)}s` : 'FULLY CHARGED'}</small></div></div>
       {hud.adaptive && <div className="adaptive">ADAPTIVE RESOLUTION ACTIVE</div>}
       {hud.diagnostics && <pre className="diagnostics">{hud.diagnostics}</pre>}
+    </div>}
+    {status === 'playing' && <div className={`reload-status${hud.magazine <= 10 ? ' low-ammo' : ''}`}>
+      <span className="compact-ammo" aria-label={`${hud.magazine} loaded, ${hud.bullets} total rounds`}>{hud.magazine}<small>/{hud.bullets}</small></span>
+      {(hud.magazine <= 10 || hud.reloadTime > 0 || touch) && <button
+        disabled={hud.reloadTime > 0 || hud.magazine === 50 || hud.bullets <= hud.magazine}
+        onPointerDown={event => event.stopPropagation()}
+        onClick={() => engine.current?.reload()}
+        aria-label={hud.reloadTime > 0 ? 'Reloading' : 'Reload weapon'}>
+        {hud.reloadTime > 0 ? `RELOADING ${hud.reloadTime.toFixed(1)}s` : hud.bullets <= hud.magazine ? 'NO RESERVE' : `${touch ? '' : 'R / '}RELOAD`}
+      </button>}
     </div>}
     {touch && status === 'playing' && engine.current && <MobileControls engine={engine.current} />}
     {intro && <div className="cinematic" aria-label="City introduction">
