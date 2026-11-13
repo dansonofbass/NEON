@@ -11,8 +11,8 @@ export default function Game() {
   const engine = useRef<Engine | null>(null);
   const music = useRef<GameMusic | null>(null);
   const alive = useRef(false);
-  const busy = useRef(false);
   const [status, setStatus] = useState<Status>('start');
+  const [sceneReady, setSceneReady] = useState(false);
   const [message, setMessage] = useState('');
   const [hud, setHud] = useState(initial);
   const [best, setBest] = useState(0);
@@ -33,13 +33,25 @@ export default function Game() {
       setTouch(event.matches);
     };
     touchDevice.addEventListener('change', inputChanged);
-    if (mobile) setSettings(s => ({ ...s, quality: 'low' }));
+
     try {
       const data = JSON.parse(localStorage.getItem('neon-drift-v1') || '{}');
       if (Number.isFinite(data.best)) setBest(Math.max(0, data.best));
-      setSettings({ quality: data.quality === 'low' || (!data.quality && mobile) ? 'low' : 'standard', sound: data.sound !== false, recoil: data.recoil !== false });
+      setSettings({ quality: 'standard', sound: data.sound !== false, recoil: data.recoil !== false });
     } catch { /* Storage is optional. */ }
-    return () => { music.current?.dispose(); music.current = null; alive.current = false; touchDevice.removeEventListener('change', inputChanged); engine.current?.dispose(); engine.current = null; };
+    let cancelled = false;
+    void import('../../game/engine').then(({ Engine }) => {
+      if (cancelled || !host.current) return;
+      const instance = new Engine(host.current, latestSettings.current, {
+        hud: value => { if (!cancelled) setHud(value); },
+        status: (value, detail) => { if (!cancelled) { setStatus(value); setMessage(detail || ''); } }
+      });
+      engine.current = instance;
+      instance.setTouchMode(touchDevice.matches);
+      instance.showMenu();
+      setSceneReady(true);
+    }).catch(error => { if (!cancelled) { setStatus('error'); setMessage(error instanceof Error ? error.message : 'WebGL could not start.'); } });
+    return () => { cancelled = true; music.current?.dispose(); music.current = null; alive.current = false; touchDevice.removeEventListener('change', inputChanged); engine.current?.dispose(); engine.current = null; };
   }, []);
 
   useEffect(() => { engine.current?.configure(settings); }, [settings]);
@@ -52,40 +64,24 @@ export default function Game() {
     try { localStorage.setItem('neon-drift-v1', JSON.stringify({ ...settings, best })); } catch { /* Private browsing can deny storage. */ }
   }, [settings, best]);
 
-  async function play() {
+  function play() {
     music.current?.unlock(latestSettings.current.sound);
-    if (engine.current) { engine.current.resume(); return; }
-    if (busy.current || !host.current) return;
-    busy.current = true; setStatus('loading'); setMessage('');
-    // Request from this click, before import yields and transient activation expires.
-    if (!touch) try { void Promise.resolve(host.current.requestPointerLock()).catch(() => {}); } catch { /* Explicit Enter button below retries. */ }
-    try {
-      const { Engine } = await import('../../game/engine');
-      if (!alive.current || !host.current) return;
-      const instance = new Engine(host.current, latestSettings.current, {
-        hud: value => { if (alive.current) setHud(value); },
-        status: (value, detail) => { if (alive.current) { music.current?.setPlaying(value === 'playing' || value === 'intro', latestSettings.current.sound); setStatus(value); setMessage(detail || ''); } }
-      });
-      engine.current = instance;
-      instance.setTouchMode(touch);
-      instance.start();
-    } catch (error) {
-      document.exitPointerLock?.();
-      setStatus('error'); setMessage(error instanceof Error ? error.message : 'WebGL could not start. Try a browser with hardware acceleration enabled.');
-    } finally { busy.current = false; }
+    if (!engine.current) return;
+    if (status === 'start') engine.current.beginRun();
+    else engine.current.resume();
   }
   function restart() { music.current?.reset(); music.current?.unlock(latestSettings.current.sound); engine.current?.reset(); engine.current?.resume(); }
   function mainMenu() {
     music.current?.reset();
-    engine.current?.dispose(); engine.current = null;
+    engine.current?.showMenu();
     setHud(initial); setMessage(''); setStatus('start');
   }
+  const landing = ['start', 'loading', 'error'].includes(status);
   const intro = status === 'intro';
   const menu = status !== 'playing' && !intro;
   const started = !['start', 'loading', 'error', 'paused'].includes(status);
-  return <main className={`app${started ? ' in-game' : ''}${touch ? ' touch-mode' : ''}${menu ? ' menu-open' : ''}${status === 'dead' ? ' game-over' : ''}${intro ? ' intro-scene' : ''}`}>
+  return <main className={`app${started ? ' in-game' : ''}${touch ? ' touch-mode' : ''}${menu ? ' menu-open' : ''}${status === 'dead' ? ' game-over' : ''}${intro ? ' intro-scene' : ''}${landing ? ' cinematic-menu' : ''}`}>
     <div className="world" ref={host} aria-label="NEON DRIFT game viewport" />
-    {!started && <div className="city-art" aria-hidden="true"><div className="moon" /><div className="horizon" />{Array.from({ length: 13 }, (_, i) => <div className={`tower tower-${i}`} key={i}><span /><i /><b /></div>)}<div className="road" /><div className="road-line" /></div>}
     {status === 'dead' && <div className="death-wash" aria-hidden="true" />}
     <div className="grain" aria-hidden="true" />
     <header className="topbar"><a className="wordmark" href="./"><span className="brand-icon">N</span> NEON DRIFT<span className="edition"> / SOLO OPS</span></a><span className="system-status"><i /> {status === 'playing' ? 'LINK ACTIVE' : 'SYSTEM ONLINE'}<span className="version">V.01</span></span></header>
@@ -119,23 +115,26 @@ export default function Game() {
     </div>}
 
 
-    {menu && <div className={`menu ${started ? 'overlay' : ''}`}>
-      <section className="menu-content">
-        <div className="eyebrow intro-kicker"><span /> {status === 'dead' ? 'SIGNAL LOST' : status === 'paused' ? 'MAIN MENU / RUN PAUSED' : 'ENDLESS CITY. ONE OPERATIVE.'}</div>
-        <h1>{status === 'dead' ? <>GAME<br /><em>OVER</em></> : <>NEON<br /><em>DRIFT</em><span className="title-dot">®</span></>}</h1>
-        <p className="tagline">{status === 'dead' ? `${hud.kills} robots offline. The city is still waiting.` : status === 'paused' ? 'Your city. Your pace. Jump back into the grid.' : 'After hours. No limits.'}</p>
-        <p className="description">{status === 'error' ? message : status === 'loading' ? 'Initializing your neighborhood…' : status === 'start' ? <>A city without an edge. Robots with one weakness.<br />Keep moving. Make every shot count.</> : message || (status === 'ready' ? (touch ? 'Your district is ready. Tap below to play.' : 'Your district is ready. Click below to capture your mouse.') : '200 starting rounds. +20 per elimination. Escalating hostiles.')}</p>
-        <div className="actions">
-          <button className="primary" disabled={status === 'loading'} onClick={status === 'dead' ? restart : status === 'error' ? () => location.reload() : play}><span>{status === 'loading' ? 'INITIALIZING' : status === 'error' ? 'RELOAD & RETRY' : status === 'dead' ? 'RESTART' : status === 'paused' ? 'RESUME RUN' : status === 'ready' ? 'ENTER THE GRID' : 'ENTER THE GRID'}</span><span>{status === 'loading' ? '···' : '↗'}</span></button>
-          {status === 'dead' && <button className="restart" onClick={mainMenu}>MAIN MENU</button>}
-          {status === 'paused' && <button className="restart" onClick={restart}>RESTART</button>}
-          <div className="play-note">{touch ? 'TOUCH CONTROLS' : status === 'start' ? 'SINGLE PLAYER' : 'MOUSE + KEYBOARD'}<span />{touch ? 'LANDSCAPE RECOMMENDED' : status === 'start' ? 'NO DOWNLOADS' : 'ESC / MAIN MENU'}</div>
+    {menu && <>
+      {landing && <div className="menu-shade" aria-hidden="true" />}
+      <section className={landing ? 'landing-menu' : 'menu overlay'} aria-label={landing ? 'Main menu' : 'Run menu'}>
+        <div className="menu-content">
+          <h1>{status === 'dead' ? <>GAME<br /><em>OVER</em></> : <>NEON<br /><em>DRIFT</em></>}</h1>
+          <p className="tagline">{landing ? 'SURVIVE THE GRID.' : status === 'dead' ? `${hud.kills} robots offline.` : status === 'paused' ? 'RUN PAUSED' : 'READY TO ENTER'}</p>
+          {(status === 'error' || status === 'ready') && <p className="description" role="status">{message}</p>}
+          <div className="actions">
+            <button className="primary" disabled={status === 'loading' || (status === 'start' && !sceneReady)} onClick={status === 'dead' ? restart : status === 'error' ? () => location.reload() : play}><span>{status === 'loading' ? 'PREPARING' : status === 'error' ? 'RETRY' : status === 'dead' ? 'RESTART' : status === 'paused' ? 'RESUME' : 'PLAY'}</span><span aria-hidden="true">&#8599;</span></button>
+            {status === 'paused' && <button className="restart" onClick={restart}>RESTART</button>}
+            {!landing && <button className="restart" onClick={mainMenu}>MAIN MENU</button>}
+          </div>
         </div>
-        <div className="settings"><label>QUALITY<select value={settings.quality} onChange={e => setSettings(s => ({ ...s, quality: e.target.value as Settings['quality'] }))}><option value="standard">Standard</option><option value="low">Low</option></select></label><button aria-pressed={settings.sound} onClick={() => setSettings(s => ({ ...s, sound: !s.sound }))}>SOUND <span>{settings.sound ? 'ON' : 'OFF'}</span></button><button aria-pressed={settings.recoil} onClick={() => setSettings(s => ({ ...s, recoil: !s.recoil }))}>RECOIL <span>{settings.recoil ? 'ON' : 'OFF'}</span></button></div>
       </section>
-      {!started && <aside className="scene-label"><span className="eyebrow">WELCOME TO THE AFTERLIGHT</span><span className="scene-rule" /><p>PROCEDURAL DISTRICTS<br />UNLIMITED POSSIBILITIES</p><strong>夜の街</strong></aside>}
-      <div className="controls"><span className="eyebrow">THE BASICS</span>{touch ? <div><span><kbd>LEFT STICK</kbd> Move / sprint</span><span><kbd>RIGHT SWIPE</kbd> Aim</span><span><kbd>HOLD FIRE</kbd> Shoot / aim</span><span><kbd>BUTTONS</kbd> Jump / grenade</span></div> : <div><span><kbd>W A S D</kbd> Move</span><span><kbd>MOUSE</kbd> Aim / fire</span><span><kbd>SHIFT</kbd> Sprint</span><span><kbd>SPACE</kbd> Jump</span><span><kbd>G</kbd> Grenade</span><span><kbd>ESC</kbd> Main menu</span></div>}</div>
-    </div>}
-    {menu && <footer><span><i /> BUILT FOR THE NIGHT</span><span>PERSONAL BEST <b>{String(best).padStart(3, '0')}</b></span><span className="footer-end">NO END. JUST ANOTHER BLOCK. <b>↗</b></span></footer>}
+      <button className="sound-toggle" aria-label={`Sound ${settings.sound ? 'on' : 'off'}`} aria-pressed={settings.sound} onClick={() => {
+        const sound = !settings.sound;
+        music.current?.unlock(sound);
+        setSettings(s => ({ ...s, sound }));
+      }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4Z" />{settings.sound ? <path d="M15 8q4 4 0 8m3-11q7 7 0 14" /> : <path d="m16 9 6 6m0-6-6 6" />}</svg><span>SOUND {settings.sound ? 'ON' : 'OFF'}</span></button>
+    </>}
+
   </main>;
 }

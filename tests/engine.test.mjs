@@ -331,3 +331,60 @@ test('aerial path stays above buildings, descends in a clear street and joins pl
     assert.equal(quadrants.size,4); assert.ok(ahead>40,'front spawns are allowed without a late fallback');
   } finally {Math.random=random;e.dispose();}
 });
+
+
+test('live menu reuses city, renderer, listeners and loop across twenty complete runs', () => {
+  const {engine:e,host,statuses}=create(true);
+  e.showMenu(); fill(e); e.setTouchMode(true);
+  const renderer=e.renderer, city=e.chunks[0].group;
+  const frames=rafCount, listeners=document.listeners+window.listeners+host.listeners;
+  const camera=e.camera.position.clone();
+  e.previewTime=20; e.updateCamera();
+  assert.ok(e.camera.position.distanceTo(camera)>.1,'live aerial camera drifts');
+  const drifted=e.camera.position.clone();
+  e.pause(); assert.equal(e.preview,true); assert.equal(e.running,false);
+  for(let i=0;i<20;i++) {
+    e.beginRun(); e.advanceIntro(0);
+    assert.equal(statuses.at(-1),'intro'); e.updateCamera();
+    if(i===0) assert.ok(e.camera.position.distanceTo(drifted)<.00001,'Play joins the current aerial view');
+    e.advanceIntro(8); assert.equal(statuses.at(-1),'playing');
+    e.showMenu(); fill(e);
+    assert.equal(e.renderer,renderer); assert.equal(e.chunks[0].group,city);
+    assert.equal(e.survival,0); assert.equal(e.running,false); assert.equal(e.gun.visible,false);
+    assert.equal(e.chunks.length,25); assert.equal(rafCount,frames);
+    assert.equal(document.listeners+window.listeners+host.listeners,listeners);
+  }
+  e.adaptive=true; e.configure({...settings,sound:true}); assert.equal(e.adaptive,true,'sound changes preserve performance protection');
+  e.dispose();
+
+  assert.equal(e.chunks.length,0); assert.equal(rafCount,frames-1);
+  assert.equal(document.listeners+window.listeners+host.listeners,0);
+});
+
+
+test('menu patrols reuse robots on loaded streets and join gameplay after the camera descent', () => {
+  const {engine:e,statuses}=create(true); e.setTouchMode(true); e.showMenu(); fill(e);
+  const pool=e.enemies.slice();
+  e.previewTime=0; e.updateMenuPatrols(); e.updateCamera();
+  const first=e.enemies[0].mesh.position.clone(), aerial=e.camera.position.clone();
+  assert.equal(e.enemies.filter(robot=>robot.health).length,16);
+  e.previewTime=10; e.updateMenuPatrols(); e.updateCamera();
+  assert.ok(e.enemies[0].mesh.position.distanceTo(first)>1);
+  assert.ok(e.camera.position.distanceTo(aerial)>10,'noticeable but gradual flyover');
+  for(const robot of e.enemies.filter(robot=>robot.health)) {
+    assert.equal(robot.mesh.visible,true); assert.equal(e.blocked(robot.x,robot.z,.55),false);
+  }
+  e.simulate(30); assert.equal(e.health,200); assert.equal(e.survival,0);
+  e.beginRun(); e.advanceIntro(0);
+  for(let i=0;i<=800;i++) {
+    e.introTime=i/100; e.updateCamera();
+    const p=e.camera.position;
+    for(const c of e.chunks) for(const b of c.boxes) {
+      if(Math.abs(p.x-c.group.position.x-b.x)<b.w/2+.3 && Math.abs(p.z-c.group.position.z-b.z)<b.d/2+.3) assert.ok(p.y>b.h+.3);
+    }
+  }
+  e.introTime=7; e.advanceIntro(1);
+  assert.equal(statuses.at(-1),'playing'); assert.ok(e.camera.position.equals(e.player));
+  assert.deepEqual(e.enemies,pool); assert.equal(e.survival,0); assert.equal(e.health,200);
+  e.dispose();
+});

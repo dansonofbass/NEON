@@ -61,6 +61,11 @@ export class Engine {
   private disposed = false;
   private failed = false;
   private raf = 0;
+  private loopStarted = false;
+  private preview = false;
+  private previewTime = 0;
+  private readonly reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  private aerialOffset = new THREE.Vector3();
   private lastTime = 0;
   private accumulator = 0;
   private hudClock = 0;
@@ -124,11 +129,11 @@ export class Engine {
     }
     this.host.appendChild(this.renderer.domElement);
     this.listen(document, 'pointerlockchange', () => {
-      if (this.touchMode) return;
+      if (this.touchMode || this.preview) return;
       if (document.pointerLockElement === this.host && !this.failed && this.health > 0) { this.activate(); }
       else { this.pause(); }
     });
-    this.listen(document, 'pointerlockerror', () => { if (!this.running && !this.touchMode) this.callbacks.status('ready', 'Mouse capture was blocked. Click Enter again, or allow pointer lock in your browser.'); });
+    this.listen(document, 'pointerlockerror', () => { if (!this.preview && !this.running && !this.touchMode) this.callbacks.status('ready', 'Mouse capture was blocked. Click Enter again, or allow pointer lock in your browser.'); });
     this.listen(document, 'mousemove', ((event: MouseEvent) => {
       if (!this.running || this.touchMode || this.introTime < INTRO_SECONDS) return;
       this.yaw -= event.movementX * .0021;
@@ -199,12 +204,54 @@ export class Engine {
     return { mesh: group, eye, x: 0, z: 0, health: 0, boss: i === 40, state: 'dead', timer: 0, check: i * .045, sees: false, angle: i * 2.4 };
   }
 
+  // Preview and gameplay share one canvas, bounded chunk set and RAF owner.
+  showMenu() {
+    if (this.disposed || this.failed) return;
+    this.preview = true;
+    this.reset();
+    this.updateMenuPatrols();
+    if (document.pointerLockElement === this.host) document.exitPointerLock?.();
+    this.updateCamera();
+    this.ensureLoop();
+  }
+  beginRun() {
+    if (!this.preview || this.disposed || this.failed) return;
+    this.aerialOffset.copy(this.camera.position).sub(this.scratch.set(42, 58, 50));
+    this.preview = false;
+    this.resume();
+  }
+  // Reuse ordinary robot meshes for quiet street patrols. Combat stays frozen
+  // until the prologue ends; these same robots then join normal enemy AI.
+  private updateMenuPatrols() {
+    for (let i = 0; i < 16; i++) {
+      const robot = this.enemies[i];
+      const lane = Math.floor(i / 4), phase = this.previewTime * .13 + i * 1.7;
+      const along = -30 + Math.sin(phase) * 18;
+      const cross = lane % 2 === 0 ? 20 : 60;
+      const x = lane < 2 ? cross : along;
+      const z = lane < 2 ? along : cross;
+      const visible = this.loaded(x, z);
+      robot.mesh.visible = visible;
+      robot.health = visible ? 1 : 0;
+      robot.x = x; robot.z = z;
+      robot.state = 'idle'; robot.sees = false; robot.timer = 1.5;
+      robot.eye.material = this.neon[1];
+      robot.mesh.position.set(x, 0, z);
+      const forward = Math.cos(phase) >= 0;
+      robot.mesh.rotation.y = lane < 2 ? (forward ? Math.PI : 0) : (forward ? -Math.PI / 2 : Math.PI / 2);
+    }
+  }
+  private ensureLoop() {
+    if (this.loopStarted) return;
+    this.loopStarted = true;
+    this.lastTime = performance.now();
+    this.raf = requestAnimationFrame(this.frame);
+  }
   start() {
     if (this.disposed) return;
     if (this.touchMode || document.pointerLockElement === this.host) { this.activate(); }
     else this.callbacks.status('ready');
-    this.lastTime = performance.now();
-    this.raf = requestAnimationFrame(this.frame);
+    this.ensureLoop();
   }
   resume() {
     if (this.disposed || this.failed || this.health <= 0) return;
@@ -234,12 +281,13 @@ export class Engine {
     }
   }
   pause() {
+    if (this.preview || this.disposed) return;
     this.running = false; this.clearTouchInput(); this.keys.clear(); this.accumulator = 0;
     if (document.pointerLockElement === this.host) document.exitPointerLock?.();
     if (!this.failed && this.health > 0) this.callbacks.status('paused');
   }
   setTouchMode(enabled: boolean) {
-    this.touchMode = enabled; this.clearTouchInput();
+    this.touchMode = enabled; this.clearTouchInput(); this.resize();
     if (enabled && document.pointerLockElement === this.host) document.exitPointerLock?.();
   }
   clearTouchInput() {
@@ -267,17 +315,20 @@ export class Engine {
     if (action === 'jump') this.touchJumpQueued = true; else this.throwGrenade();
   }
   configure(settings: Settings) {
-    this.settings = { ...settings }; this.adaptive = false; this.slowTime = 0; this.resize();
+    const qualityChanged = this.settings.quality !== settings.quality;
+    this.settings = { ...settings };
+    if (qualityChanged) { this.adaptive = false; this.slowTime = 0; }
+    this.resize();
     if (!settings.sound) void this.audio?.suspend().catch(() => {});
     else if (this.audio) void this.audio.resume().catch(() => {});
   }
   private resize() {
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.settings.quality === 'low' ? .8 : this.adaptive ? .85 : 1.25));
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.settings.quality === 'low' ? .8 : this.adaptive ? .85 : this.touchMode ? 1 : 1.25));
     this.renderer.setSize(this.host.clientWidth, this.host.clientHeight);
     this.camera.aspect = this.host.clientWidth / Math.max(1, this.host.clientHeight); this.camera.updateProjectionMatrix();
   }
   reset() {
-    this.introTime = 0; this.introStarted = false;
+    this.introTime = 0; this.introStarted = false; this.aerialOffset.set(0, 0, 0);
     this.clearTouchInput();
     this.running = false; this.keys.clear(); this.firing = false; this.health = 200; this.kills = 0; this.bullets = 200; this.ammo = 3; this.recharge = 0;
     this.damageAgo = 10; this.hurtTime = 0; this.hitTime = 0; this.shootCooldown = 0; this.grenadeLatch = false;
@@ -286,11 +337,16 @@ export class Engine {
     this.bossBreather = 0; this.bossAlert = 0; this.bossAlertMessage = 'BOSS INCOMING'; this.hudClock = 0;
     this.vertical = 0; this.grounded = true; this.yaw = 0; this.pitch = 0; this.elapsed = 0; this.accumulator = 0;
     this.originX = 0; this.originZ = 0; this.player.set(20, EYE, 20);
-    for (const c of this.chunks) this.removeChunk(c); this.chunks.length = 0; this.queue.length = 0;
+    // Keep the already-warmed origin city when returning to the menu.
+    for (const c of [...this.chunks]) {
+      if (c.cx < -2 || c.cx > 2 || c.cz < -2 || c.cz > 2) { this.removeChunk(c); this.chunks.splice(this.chunks.indexOf(c), 1); }
+      else c.group.position.set(c.cx * CHUNK, 0, c.cz * CHUNK);
+    }
+    this.queue.length = 0;
     for (const e of this.enemies) this.despawn(e);
     for (const e of this.effects) { e.life = 0; e.mesh.visible = false; }
     for (const g of this.grenades) { g.fuse = 0; g.mesh.visible = false; }
-    this.addChunk(0, 0); this.updateStreaming(); this.navClock = 0; this.spawnClock = 0;
+    if (!this.chunks.some(c => c.cx === 0 && c.cz === 0)) this.addChunk(0, 0); this.updateStreaming(); this.navClock = 0; this.spawnClock = 0;
     this.updateCamera(); this.syncHud();
   }
 
@@ -399,19 +455,22 @@ export class Engine {
     if (!document.hidden) {
       // Hard work budget: at most one small chunk (4–8 buildings) per rendered frame.
       if (this.queue.length) { const next = this.queue.shift()!; this.addChunk(next.cx, next.cz); this.navClock = 0; }
-      if (this.running && this.introTime < INTRO_SECONDS) {
+      this.frameMs += (Math.min(raw, .1) * 1000 - this.frameMs) * .025;
+      this.slowTime = this.frameMs > 27 ? this.slowTime + delta : Math.max(0, this.slowTime - delta);
+      if (this.slowTime > 6 && !this.adaptive && this.settings.quality === 'standard') { this.adaptive = true; this.resize(); }
+      if (this.preview) {
+        this.previewTime += delta;
+        this.updateMenuPatrols();
+      } else if (this.running && this.introTime < INTRO_SECONDS) {
         this.advanceIntro(raw);
       } else if (this.running) {
-        this.frameMs += (Math.min(raw, .1) * 1000 - this.frameMs) * .025;
-        this.slowTime = this.frameMs > 27 ? this.slowTime + delta : Math.max(0, this.slowTime - delta);
-        if (this.slowTime > 6 && !this.adaptive && this.settings.quality === 'standard') { this.adaptive = true; this.resize(); }
         this.accumulator += delta;
         let steps = 0;
         while (this.accumulator >= STEP && steps < 5) { this.simulate(STEP); this.accumulator -= STEP; steps++; if (!this.running) break; }
         if (steps === 5) this.accumulator = 0;
       }
       this.updateCamera(); this.renderer.render(this.scene, this.camera);
-      this.hudClock += delta; if (this.hudClock >= .1) { this.hudClock = 0; this.syncHud(); }
+      this.hudClock += delta; if (!this.preview && this.hudClock >= .1) { this.hudClock = 0; this.syncHud(); }
     }
   };
   private simulate(dt: number) {
@@ -452,14 +511,24 @@ export class Engine {
   }
   private updateCamera() {
     const fog = this.scene.fog as THREE.Fog;
+    if (this.preview) {
+      const motion = this.reducedMotion ? 0 : this.previewTime;
+      this.camera.position.set(42 + Math.sin(motion * .09) * 13, 48 + Math.sin(motion * .12) * 3, 50 + Math.sin(motion * .075) * 14);
+      this.camera.lookAt(20, EYE, 0);
+      this.camera.fov = 54; this.camera.updateProjectionMatrix();
+      fog.near = 55; fog.far = 110;
+      this.gun.visible = false; this.muzzle.visible = false;
+      return;
+    }
     if (this.introTime < INTRO_SECONDS) {
       // Aerial orbit, then a descent along the clear center street. No extra world,
       // camera, render loop, models or postprocessing are allocated for this shot.
       const t = this.introTime / INTRO_SECONDS;
       const ease = (v: number) => v * v * (3 - 2 * v);
-      const orbit = ease(Math.min(1, t / .65));
-      const descent = ease(Math.max(0, (t - .65) / .35));
+      const orbit = ease(Math.min(1, t / .4));
+      const descent = ease(Math.max(0, (t - .4) / .6));
       this.camera.position.set(20 + 22 * (1 - orbit), 58 - 16 * orbit - (42 - EYE) * descent, 50 - 16 * orbit - 14 * descent);
+      this.camera.position.addScaledVector(this.aerialOffset, 1 - orbit);
       this.camera.lookAt(20, EYE, 0);
       this.camera.fov = 54 + 24 * descent; this.camera.updateProjectionMatrix();
       fog.near = 55 - 20 * descent; fog.far = 110 - (110 - this.visibility) * descent;
